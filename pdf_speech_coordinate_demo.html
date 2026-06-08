@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Speech Anchor Demo</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 18px;
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      color: #111;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 24px;
+    }
+
+    h2 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+
+    button,
+    input {
+      margin: 4px 6px 4px 0;
+      padding: 7px 10px;
+      font-size: 14px;
+    }
+
+    .panel {
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #d0d7de;
+      background: #fff;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr);
+      gap: 12px;
+      align-items: start;
+    }
+
+    #viewerWrap {
+      position: relative;
+      display: inline-block;
+      border: 1px solid #888;
+      background: white;
+    }
+
+    #pdfCanvas,
+    #anchorLayer {
+      display: block;
+    }
+
+    #anchorLayer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      pointer-events: none;
+    }
+
+    .anchor-guide {
+      position: absolute;
+      box-sizing: border-box;
+      border: 1px solid #ff2d2d;
+      background: rgba(255, 45, 45, 0.05);
+    }
+
+    .anchor-dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      margin-left: -5px;
+      margin-top: -5px;
+      border-radius: 999px;
+      border: 2px solid white;
+      background: #ff2d2d;
+      box-shadow: 0 0 0 2px #111;
+    }
+
+    #transcript {
+      min-height: 45px;
+      padding: 10px;
+      border: 2px solid #111;
+      background: #fffbea;
+      font-size: 26px;
+      font-weight: bold;
+      line-height: 1.4;
+    }
+
+    .status-line {
+      margin-top: 8px;
+      font-weight: bold;
+    }
+
+    pre {
+      max-height: 260px;
+      overflow: auto;
+      padding: 10px;
+      border: 1px solid #ccc;
+      background: #111;
+      color: #f5f5f5;
+      white-space: pre-wrap;
+      font-size: 12px;
+    }
+
+    .error {
+      color: #b00020;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>PDF + STT TEXT_ANCHOR Logic Demo</h1>
+
+  <div class="panel">
+    <input id="pdfInput" type="file" accept="application/pdf" />
+    <button id="prevPageButton" type="button">이전 페이지</button>
+    <button id="nextPageButton" type="button">다음 페이지</button>
+    <button id="startSpeechButton" type="button">음성 인식 시작</button>
+    <button id="stopSpeechButton" type="button">음성 인식 중지</button>
+    <div id="pageInfo">현재 페이지: - / -</div>
+    <div id="status">PDF를 업로드하세요.</div>
+    <div id="error" class="error"></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>PDF Canvas</h2>
+      <div id="viewerWrap">
+        <canvas id="pdfCanvas"></canvas>
+        <div id="anchorLayer"></div>
+      </div>
+      <div id="selectedAnchorLabel" class="status-line">현재 선택된 앵커: 없음</div>
+      <p>
+        좌표계: <strong>pdfjs_canvas_viewport</strong>.
+        px 좌표는 PDF.js 렌더링 scale이 적용된 canvas viewport 기준이고,
+        ratio 좌표는 현재 페이지 canvas 크기 대비 비율입니다.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>STT 인식 문장</h2>
+      <div id="transcript">아직 인식된 문장이 없습니다.</div>
+      <h2 style="margin-top:12px;">activeAnchor 결과</h2>
+      <pre id="matchOutput">아직 결과가 없습니다.</pre>
+      <h2>candidates</h2>
+      <pre id="candidateOutput">아직 후보가 없습니다.</pre>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Raw Text Items</h2>
+      <pre id="rawOutput">PDF 업로드 후 표시됩니다.</pre>
+    </div>
+    <div class="panel">
+      <h2>TEXT_ANCHOR 목록</h2>
+      <pre id="anchorOutput">PDF 업로드 후 표시됩니다.</pre>
+    </div>
+  </div>
+
+  <script>
+    const PDF_SCALE = 1.5;
+    const COORDINATE_SYSTEM = "pdfjs_canvas_viewport";
+    const AUTO_SELECT_THRESHOLD = 0.85;
+    const AMBIGUITY_GAP_THRESHOLD = 0.15;
+    const MAX_PHRASE_LENGTH = 6;
+    const STOP_WORDS = new Set([
+      "이", "그", "저", "수", "것", "등", "및", "에", "은", "는",
+      "가", "을", "를", "로", "ai"
+    ]);
+
+    const pdfInput = document.getElementById("pdfInput");
+    const prevPageButton = document.getElementById("prevPageButton");
+    const nextPageButton = document.getElementById("nextPageButton");
+    const startSpeechButton = document.getElementById("startSpeechButton");
+    const stopSpeechButton = document.getElementById("stopSpeechButton");
+    const pageInfo = document.getElementById("pageInfo");
+    const statusEl = document.getElementById("status");
+    const errorEl = document.getElementById("error");
+    const transcriptEl = document.getElementById("transcript");
+    const matchOutput = document.getElementById("matchOutput");
+    const candidateOutput = document.getElementById("candidateOutput");
+    const rawOutput = document.getElementById("rawOutput");
+    const anchorOutput = document.getElementById("anchorOutput");
+    const selectedAnchorLabel = document.getElementById("selectedAnchorLabel");
+    const pdfCanvas = document.getElementById("pdfCanvas");
+    const anchorLayer = document.getElementById("anchorLayer");
+    const canvasContext = pdfCanvas.getContext("2d");
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+    let pdfDoc = null;
+    let currentPage = 1;
+    let pdfState = null;
+    let activeAnchor = null;
+    let recognition = null;
+
+    function round2(value) {
+      return Number(Number(value).toFixed(2));
+    }
+
+    function round4(value) {
+      return Number(Number(value).toFixed(4));
+    }
+
+    function setError(message) {
+      errorEl.textContent = message || "";
+    }
+
+    function normalizeText(text) {
+      return String(text || "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, "")
+        .trim();
+    }
+
+    function tokenize(text) {
+      const spaced = String(text || "")
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, " ")
+        .trim();
+
+      if (!spaced) {
+        return [];
+      }
+
+      return spaced
+        .split(/\s+/)
+        .map((token) => token.replace(/(은|는|이|가|을|를|로|으로|에|에서|부터|까지|께서|처럼|보다|도|만)$/u, ""))
+        .filter(Boolean);
+    }
+
+    function isWeakStandaloneText(text) {
+      const tokens = tokenize(text);
+      const normalized = normalizeText(text);
+
+      return (
+        tokens.length <= 1 &&
+        (normalized.length <= 1 || STOP_WORDS.has(normalized))
+      );
+    }
+
+    function clearAnchorGuide() {
+      anchorLayer.innerHTML = "";
+    }
+
+    function drawAnchorGuide(anchor) {
+      clearAnchorGuide();
+
+      if (!anchor || anchor.page !== currentPage) {
+        return;
+      }
+
+      const pageData = getCurrentPageData();
+      const canvasWidth = pageData?.width || pdfCanvas.width;
+      const canvasHeight = pageData?.height || pdfCanvas.height;
+      const x = anchor.xRatio !== undefined ? anchor.xRatio * canvasWidth : anchor.x;
+      const y = anchor.yRatio !== undefined ? anchor.yRatio * canvasHeight : anchor.y;
+      const width =
+        anchor.widthRatio !== undefined ? anchor.widthRatio * canvasWidth : anchor.width;
+      const height =
+        anchor.heightRatio !== undefined ? anchor.heightRatio * canvasHeight : anchor.height;
+      const startX =
+        anchor.startXRatio !== undefined ? anchor.startXRatio * canvasWidth : anchor.startX;
+      const startY =
+        anchor.startYRatio !== undefined ? anchor.startYRatio * canvasHeight : anchor.startY;
+
+      const guide = document.createElement("div");
+      guide.className = "anchor-guide";
+      guide.style.left = `${x}px`;
+      guide.style.top = `${y}px`;
+      guide.style.width = `${width}px`;
+      guide.style.height = `${height}px`;
+
+      const dot = document.createElement("div");
+      dot.className = "anchor-dot";
+      dot.style.left = `${startX}px`;
+      dot.style.top = `${startY}px`;
+
+      anchorLayer.appendChild(guide);
+      anchorLayer.appendChild(dot);
+    }
+
+    function updatePageInfo() {
+      const total = pdfDoc ? pdfDoc.numPages : "-";
+      pageInfo.textContent = `현재 페이지: ${pdfDoc ? currentPage : "-"} / ${total}`;
+    }
+
+    function getDisplayAnchor(anchor) {
+      if (!anchor) {
+        return null;
+      }
+
+      return {
+        anchorId: anchor.anchorId,
+        page: anchor.page,
+        text: anchor.text,
+        x: anchor.x,
+        y: anchor.y,
+        width: anchor.width,
+        height: anchor.height,
+        startX: anchor.startX,
+        startY: anchor.startY,
+        endX: anchor.endX,
+        endY: anchor.endY,
+        xRatio: anchor.xRatio,
+        yRatio: anchor.yRatio,
+        widthRatio: anchor.widthRatio,
+        heightRatio: anchor.heightRatio,
+        startXRatio: anchor.startXRatio,
+        startYRatio: anchor.startYRatio,
+        endXRatio: anchor.endXRatio,
+        endYRatio: anchor.endYRatio,
+        pageWidth: anchor.pageWidth,
+        pageHeight: anchor.pageHeight,
+        coordinateSystem: anchor.coordinateSystem
+      };
+    }
+
+    function groupRawItemsIntoLines(rawItems) {
+      const sorted = [...rawItems].sort((a, b) => {
+        const ay = a.y + a.height / 2;
+        const by = b.y + b.height / 2;
+        return Math.abs(ay - by) > 6 ? ay - by : a.x - b.x;
+      });
+      const lines = [];
+
+      for (const item of sorted) {
+        const itemCenterY = item.y + item.height / 2;
+        let targetLine = null;
+
+        for (const line of lines) {
+          const tolerance = Math.max(6, line.avgHeight * 0.75);
+          if (Math.abs(itemCenterY - line.centerY) <= tolerance) {
+            targetLine = line;
+            break;
+          }
+        }
+
+        if (!targetLine) {
+          targetLine = {
+            centerY: itemCenterY,
+            avgHeight: item.height,
+            items: []
+          };
+          lines.push(targetLine);
+        }
+
+        targetLine.items.push(item);
+        targetLine.avgHeight =
+          targetLine.items.reduce((sum, rowItem) => sum + rowItem.height, 0) /
+          targetLine.items.length;
+        targetLine.centerY =
+          targetLine.items.reduce(
+            (sum, rowItem) => sum + rowItem.y + rowItem.height / 2,
+            0
+          ) / targetLine.items.length;
+      }
+
+      return lines.map((line) => ({
+        ...line,
+        items: line.items.sort((a, b) => a.x - b.x)
+      }));
+    }
+
+    function createAnchorFromItems(pageNumber, items, anchorIndex, pageWidth, pageHeight) {
+      const x = Math.min(...items.map((item) => item.x));
+      const y = Math.min(...items.map((item) => item.y));
+      const right = Math.max(...items.map((item) => item.x + item.width));
+      const bottom = Math.max(...items.map((item) => item.y + item.height));
+      const width = right - x;
+      const height = bottom - y;
+      const text = items.map((item) => item.text).join(" ").replace(/\s+/g, " ").trim();
+
+      return {
+        anchorId: `p${pageNumber}_a${String(anchorIndex).padStart(3, "0")}`,
+        page: pageNumber,
+        text,
+        normalizedText: normalizeText(text),
+        x: round2(x),
+        y: round2(y),
+        width: round2(width),
+        height: round2(height),
+        startX: round2(x),
+        startY: round2(y),
+        endX: round2(right),
+        endY: round2(y),
+        xRatio: round4(x / pageWidth),
+        yRatio: round4(y / pageHeight),
+        widthRatio: round4(width / pageWidth),
+        heightRatio: round4(height / pageHeight),
+        startXRatio: round4(x / pageWidth),
+        startYRatio: round4(y / pageHeight),
+        endXRatio: round4(right / pageWidth),
+        endYRatio: round4(y / pageHeight),
+        pageWidth: round2(pageWidth),
+        pageHeight: round2(pageHeight),
+        coordinateSystem: COORDINATE_SYSTEM,
+        source: "pdf_text_layer",
+        confidence: 1.0
+      };
+    }
+
+    function createTextAnchors(pageNumber, rawItems, pageWidth, pageHeight) {
+      const lines = groupRawItemsIntoLines(rawItems);
+      const anchors = [];
+      let anchorIndex = 1;
+
+      for (const line of lines) {
+        const items = line.items;
+
+        for (let start = 0; start < items.length; start += 1) {
+          for (
+            let length = 1;
+            length <= MAX_PHRASE_LENGTH && start + length <= items.length;
+            length += 1
+          ) {
+            const phraseItems = items.slice(start, start + length);
+            const phraseText = phraseItems.map((item) => item.text).join(" ");
+
+            if (isWeakStandaloneText(phraseText)) {
+              continue;
+            }
+
+            anchors.push(
+              createAnchorFromItems(
+                pageNumber,
+                phraseItems,
+                anchorIndex,
+                pageWidth,
+                pageHeight
+              )
+            );
+            anchorIndex += 1;
+          }
+        }
+      }
+
+      return anchors;
+    }
+
+    function getCurrentPageData() {
+      return pdfState?.pages.find((page) => page.page === currentPage);
+    }
+
+    async function renderPage(pageNumber) {
+      if (!pdfDoc) {
+        return;
+      }
+
+      const page = await pdfDoc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: PDF_SCALE });
+
+      pdfCanvas.width = viewport.width;
+      pdfCanvas.height = viewport.height;
+      anchorLayer.style.width = `${viewport.width}px`;
+      anchorLayer.style.height = `${viewport.height}px`;
+
+      canvasContext.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+      await page.render({ canvasContext, viewport }).promise;
+
+      updatePageInfo();
+      drawAnchorGuide(activeAnchor);
+    }
+
+    async function loadPdf(file) {
+      setError("");
+      clearAnchorGuide();
+      activeAnchor = null;
+      selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
+      matchOutput.textContent = "아직 결과가 없습니다.";
+      candidateOutput.textContent = "아직 후보가 없습니다.";
+      statusEl.textContent = "PDF를 읽는 중입니다...";
+
+      const arrayBuffer = await file.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      currentPage = 1;
+
+      const pages = [];
+      let rawItemCount = 0;
+      let anchorCount = 0;
+
+      for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber += 1) {
+        const page = await pdfDoc.getPage(pageNumber);
+        const viewport = page.getViewport({ scale: PDF_SCALE });
+        const pageWidth = viewport.width;
+        const pageHeight = viewport.height;
+        const textContent = await page.getTextContent();
+        const rawItems = [];
+
+        for (const item of textContent.items) {
+          const text = item.str.trim();
+
+          if (!text) {
+            continue;
+          }
+
+          const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
+          const width = item.width * viewport.scale;
+          const height = item.height * viewport.scale;
+          const x = transform[4];
+          const y = transform[5] - height;
+
+          // These are PDF.js canvas viewport coordinates, not original PDF
+          // coordinates. If OCR is added later, OCR boxes should be converted
+          // into this coordinate system before anchor matching.
+          rawItems.push({
+            page: pageNumber,
+            text,
+            x: round2(x),
+            y: round2(y),
+            width: round2(width),
+            height: round2(height),
+            xRatio: round4(x / pageWidth),
+            yRatio: round4(y / pageHeight),
+            widthRatio: round4(width / pageWidth),
+            heightRatio: round4(height / pageHeight),
+            pageWidth: round2(pageWidth),
+            pageHeight: round2(pageHeight),
+            coordinateSystem: COORDINATE_SYSTEM,
+            source: "pdf_text_item"
+          });
+        }
+
+        const anchors = createTextAnchors(pageNumber, rawItems, pageWidth, pageHeight);
+        rawItemCount += rawItems.length;
+        anchorCount += anchors.length;
+
+        pages.push({
+          page: pageNumber,
+          width: round2(pageWidth),
+          height: round2(pageHeight),
+          rawItems,
+          anchors
+        });
+      }
+
+      pdfState = {
+        fileName: file.name,
+        pageCount: pdfDoc.numPages,
+        coordinateSystem: COORDINATE_SYSTEM,
+        pages
+      };
+
+      await renderPage(currentPage);
+      refreshJsonPanels();
+
+      if (rawItemCount === 0) {
+        statusEl.textContent =
+          "선택 가능한 텍스트가 없습니다. 이미지 PDF OCR은 현재 제외되어 있습니다.";
+      } else {
+        statusEl.textContent =
+          `PDF 로드 완료: ${pdfDoc.numPages}페이지, raw item ${rawItemCount}개, TEXT_ANCHOR ${anchorCount}개 생성`;
+      }
+    }
+
+    function refreshJsonPanels() {
+      const currentPageData = getCurrentPageData();
+      rawOutput.textContent = JSON.stringify(currentPageData?.rawItems || [], null, 2);
+      anchorOutput.textContent = JSON.stringify(currentPageData?.anchors || [], null, 2);
+    }
+
+    function scoreAnchor(anchor, query, currentPageNumber) {
+      const queryNorm = normalizeText(query);
+      const anchorNorm = anchor.normalizedText;
+      const queryTokens = tokenize(query).filter((token) => !STOP_WORDS.has(token));
+      const anchorTokens = tokenize(anchor.text).filter((token) => !STOP_WORDS.has(token));
+
+      if (!queryNorm || !anchorNorm) {
+        return null;
+      }
+
+      if (isWeakStandaloneText(anchor.text)) {
+        return null;
+      }
+
+      const overlapCount = anchorTokens.filter((token) => queryTokens.includes(token)).length;
+      const overlapRatio = anchorTokens.length
+        ? overlapCount / anchorTokens.length
+        : 0;
+      const pageBoost = anchor.page === currentPageNumber ? 0.05 : 0;
+      let score = 0;
+      let matchType = "weakKeywordMatch";
+
+      if (queryNorm === anchorNorm) {
+        score = 1.0;
+        matchType = "exact";
+      } else if (queryNorm.includes(anchorNorm)) {
+        score = anchorTokens.length >= 3 ? 0.96 : 0.82;
+        matchType = anchorTokens.length >= 2 ? "phraseMatch" : "normalizedIncludes";
+      } else if (anchorNorm.includes(queryNorm) && queryNorm.length >= 2) {
+        score = 0.78;
+        matchType = "phraseMatch";
+      } else if (overlapCount >= 2) {
+        score = 0.62 + Math.min(0.25, overlapRatio * 0.25);
+        matchType = "contextMatch";
+      } else if (overlapCount === 1 && queryTokens.length >= 2 && anchorTokens.length >= 2) {
+        score = 0.48;
+        matchType = "weakKeywordMatch";
+      }
+
+      if (score <= 0) {
+        return null;
+      }
+
+      score = Math.min(1, score + pageBoost);
+
+      return {
+        anchor,
+        score: round2(score),
+        matchType
+      };
+    }
+
+    function findAnchorCandidates(query) {
+      if (!pdfState) {
+        return [];
+      }
+
+      const currentPageData = getCurrentPageData();
+      const currentAnchors = currentPageData?.anchors || [];
+      const allAnchors = pdfState.pages.flatMap((page) => page.anchors);
+      const searchAnchors = [
+        ...currentAnchors,
+        ...allAnchors.filter((anchor) => anchor.page !== currentPage)
+      ];
+
+      const scored = searchAnchors
+        .map((anchor) => scoreAnchor(anchor, query, currentPage))
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+
+      const unique = [];
+      const seen = new Set();
+
+      for (const item of scored) {
+        if (seen.has(item.anchor.anchorId)) {
+          continue;
+        }
+
+        seen.add(item.anchor.anchorId);
+        unique.push(item);
+      }
+
+      return unique;
+    }
+
+    function selectActiveAnchor(query) {
+      const candidates = findAnchorCandidates(query);
+
+      if (candidates.length === 0) {
+        activeAnchor = null;
+        return {
+          status: "anchor_not_found",
+          query,
+          reason: "현재 PDF에서 매칭 가능한 TEXT_ANCHOR를 찾지 못했습니다.",
+          candidates: []
+        };
+      }
+
+      const first = candidates[0];
+      const second = candidates[1];
+      const gap = second ? first.score - second.score : 1;
+      const candidateSummary = candidates.slice(0, 8).map((candidate) => ({
+        anchorId: candidate.anchor.anchorId,
+        page: candidate.anchor.page,
+        text: candidate.anchor.text,
+        score: candidate.score,
+        matchType: candidate.matchType
+      }));
+
+      if (
+        first.score >= AUTO_SELECT_THRESHOLD &&
+        gap >= AMBIGUITY_GAP_THRESHOLD
+      ) {
+        activeAnchor = first.anchor;
+        return {
+          status: "anchor_selected",
+          query,
+          activeAnchor: getDisplayAnchor(first.anchor),
+          score: first.score,
+          matchType: first.matchType,
+          candidates: candidateSummary.slice(1)
+        };
+      }
+
+      activeAnchor = null;
+      return {
+        status: "anchor_ambiguous",
+        query,
+        reason: "후보 간 점수 차이가 작아 시작 좌표를 확정하지 않았습니다.",
+        candidates: candidateSummary
+      };
+    }
+
+    function showAnchorResult(query) {
+      const trimmedQuery = String(query || "").trim();
+
+      if (!trimmedQuery) {
+        return;
+      }
+
+      const result = selectActiveAnchor(trimmedQuery);
+
+      matchOutput.textContent = JSON.stringify(result, null, 2);
+      candidateOutput.textContent = JSON.stringify(result.candidates || [], null, 2);
+
+      if (result.status === "anchor_selected") {
+        selectedAnchorLabel.textContent =
+          `현재 선택된 앵커: ${result.activeAnchor.text}`;
+        drawAnchorGuide(activeAnchor);
+      } else {
+        selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
+        clearAnchorGuide();
+      }
+    }
+
+    function setupSpeechRecognition() {
+      const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      if (!SpeechRecognition) {
+        setError("이 브라우저는 Web Speech API를 지원하지 않습니다. Chrome에서 테스트하세요.");
+        return null;
+      }
+
+      const speech = new SpeechRecognition();
+      speech.lang = "ko-KR";
+      speech.continuous = true;
+      speech.interimResults = true;
+
+      speech.onstart = () => {
+        statusEl.textContent = "음성 인식 중입니다...";
+      };
+
+      speech.onerror = (event) => {
+        setError(`음성 인식 오류: ${event.error}`);
+      };
+
+      speech.onresult = (event) => {
+        let latestText = "";
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          latestText += event.results[index][0].transcript;
+        }
+
+        transcriptEl.textContent = latestText || "인식 중...";
+        showAnchorResult(latestText);
+      };
+
+      speech.onend = () => {
+        statusEl.textContent = "음성 인식이 중지되었습니다.";
+      };
+
+      return speech;
+    }
+
+    pdfInput.addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+
+      if (!file) {
+        return;
+      }
+
+      try {
+        await loadPdf(file);
+      } catch (error) {
+        setError(`PDF 처리 중 오류가 발생했습니다: ${error.message}`);
+      }
+    });
+
+    prevPageButton.addEventListener("click", async () => {
+      if (!pdfDoc || currentPage <= 1) {
+        return;
+      }
+
+      currentPage -= 1;
+      activeAnchor = null;
+      selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
+      clearAnchorGuide();
+      await renderPage(currentPage);
+      refreshJsonPanels();
+    });
+
+    nextPageButton.addEventListener("click", async () => {
+      if (!pdfDoc || currentPage >= pdfDoc.numPages) {
+        return;
+      }
+
+      currentPage += 1;
+      activeAnchor = null;
+      selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
+      clearAnchorGuide();
+      await renderPage(currentPage);
+      refreshJsonPanels();
+    });
+
+    startSpeechButton.addEventListener("click", () => {
+      setError("");
+
+      if (!recognition) {
+        recognition = setupSpeechRecognition();
+      }
+
+      if (recognition) {
+        recognition.start();
+      }
+    });
+
+    stopSpeechButton.addEventListener("click", () => {
+      if (recognition) {
+        recognition.stop();
+      }
+    });
+  </script>
+</body>
+</html>
