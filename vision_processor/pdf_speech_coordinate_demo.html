@@ -83,6 +83,25 @@
       box-shadow: 0 0 0 2px #111;
     }
 
+    .straight-underline {
+      position: absolute;
+      height: 4px;
+      border-radius: 999px;
+      background: #e11d48;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65);
+      pointer-events: none;
+    }
+
+    .underline-start-marker {
+      position: absolute;
+      width: 3px;
+      height: 16px;
+      border-radius: 999px;
+      background: #0ea5e9;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+      pointer-events: none;
+    }
+
     #transcript {
       min-height: 45px;
       padding: 10px;
@@ -202,6 +221,7 @@
     let pdfState = null;
     let activeAnchor = null;
     let recognition = null;
+    let straightUnderlines = [];
 
     function round2(value) {
       return Number(Number(value).toFixed(2));
@@ -252,16 +272,15 @@
       anchorLayer.innerHTML = "";
     }
 
-    function drawAnchorGuide(anchor) {
-      clearAnchorGuide();
-
+    function getAnchorViewportBox(anchor) {
       if (!anchor || anchor.page !== currentPage) {
-        return;
+        return null;
       }
 
       const pageData = getCurrentPageData();
       const canvasWidth = pageData?.width || pdfCanvas.width;
       const canvasHeight = pageData?.height || pdfCanvas.height;
+
       const x = anchor.xRatio !== undefined ? anchor.xRatio * canvasWidth : anchor.x;
       const y = anchor.yRatio !== undefined ? anchor.yRatio * canvasHeight : anchor.y;
       const width =
@@ -270,23 +289,126 @@
         anchor.heightRatio !== undefined ? anchor.heightRatio * canvasHeight : anchor.height;
       const startX =
         anchor.startXRatio !== undefined ? anchor.startXRatio * canvasWidth : anchor.startX;
-      const startY =
-        anchor.startYRatio !== undefined ? anchor.startYRatio * canvasHeight : anchor.startY;
+      const endX =
+        anchor.endXRatio !== undefined ? anchor.endXRatio * canvasWidth : anchor.endX;
+
+      return {
+        x,
+        y,
+        width,
+        height,
+        startX,
+        endX
+      };
+    }
+
+    function getUnderlineStartX(box, startPoint) {
+      if (!startPoint) {
+        return box.startX;
+      }
+
+      const pageData = getCurrentPageData();
+      const canvasWidth = pageData?.width || pdfCanvas.width;
+      let requestedX = null;
+
+      if (Number.isFinite(startPoint.normalizedX)) {
+        requestedX = startPoint.normalizedX * canvasWidth;
+      } else if (
+        Number.isFinite(startPoint.cameraX) &&
+        Number.isFinite(startPoint.sourceWidth) &&
+        startPoint.sourceWidth > 0
+      ) {
+        requestedX = (startPoint.cameraX / startPoint.sourceWidth) * canvasWidth;
+      }
+
+      if (!Number.isFinite(requestedX)) {
+        return box.startX;
+      }
+
+      const minWidth = 18;
+      return Math.max(box.startX, Math.min(requestedX, box.endX - minWidth));
+    }
+
+    function appendStraightUnderline(anchor, style = {}, startPoint = null) {
+      const box = getAnchorViewportBox(anchor);
+
+      if (!box) {
+        return false;
+      }
+
+      const underline = document.createElement("div");
+      const padding = Math.max(3, box.height * 0.12);
+      const startX = getUnderlineStartX(box, startPoint);
+      const lineWidth = Math.max(18, box.endX - startX);
+      const y = box.y + box.height + Math.max(2, box.height * 0.12);
+
+      underline.className = "straight-underline";
+      underline.style.left = `${Math.max(0, startX - padding)}px`;
+      underline.style.top = `${y}px`;
+      underline.style.width = `${lineWidth + padding * 2}px`;
+      underline.style.height = `${style.width || 4}px`;
+      underline.style.background = style.color || "#e11d48";
+      underline.style.opacity = String(style.opacity ?? 0.95);
+      anchorLayer.appendChild(underline);
+
+      if (startPoint) {
+        const marker = document.createElement("div");
+        marker.className = "underline-start-marker";
+        marker.style.left = `${startX - 1.5}px`;
+        marker.style.top = `${y - 8}px`;
+        anchorLayer.appendChild(marker);
+      }
+
+      return true;
+    }
+
+    function renderStraightUnderlines() {
+      for (const item of straightUnderlines) {
+        if (item.anchor.page === currentPage) {
+          appendStraightUnderline(item.anchor, item.style, item.startPoint);
+        }
+      }
+    }
+
+    function drawAnchorGuide(anchor) {
+      clearAnchorGuide();
+
+      if (!anchor || anchor.page !== currentPage) {
+        renderStraightUnderlines();
+        return;
+      }
+
+      const box = getAnchorViewportBox(anchor);
 
       const guide = document.createElement("div");
       guide.className = "anchor-guide";
-      guide.style.left = `${x}px`;
-      guide.style.top = `${y}px`;
-      guide.style.width = `${width}px`;
-      guide.style.height = `${height}px`;
+      guide.style.left = `${box.x}px`;
+      guide.style.top = `${box.y}px`;
+      guide.style.width = `${box.width}px`;
+      guide.style.height = `${box.height}px`;
 
       const dot = document.createElement("div");
       dot.className = "anchor-dot";
-      dot.style.left = `${startX}px`;
-      dot.style.top = `${startY}px`;
+      dot.style.left = `${box.startX}px`;
+      dot.style.top = `${box.y}px`;
 
       anchorLayer.appendChild(guide);
       anchorLayer.appendChild(dot);
+      renderStraightUnderlines();
+    }
+
+    function drawStraightUnderline(anchor, style = {}, startPoint = null) {
+      if (!appendStraightUnderline(anchor, style, startPoint)) {
+        return false;
+      }
+
+      straightUnderlines.push({
+        anchor: getDisplayAnchor(anchor),
+        style,
+        startPoint
+      });
+
+      return true;
     }
 
     function updatePageInfo() {
@@ -475,6 +597,7 @@
       setError("");
       clearAnchorGuide();
       activeAnchor = null;
+      straightUnderlines = [];
       selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
       matchOutput.textContent = "아직 결과가 없습니다.";
       candidateOutput.textContent = "아직 후보가 없습니다.";
@@ -818,6 +941,24 @@
     stopSpeechButton.addEventListener("click", () => {
       if (recognition) {
         recognition.stop();
+      }
+    });
+
+    window.addEventListener("gesture-command", (event) => {
+      const detail = event.detail || {};
+
+      if (detail.command !== "underline") {
+        return;
+      }
+
+      if (!activeAnchor || activeAnchor.page !== currentPage) {
+        setError("밑줄을 그을 현재 텍스트 앵커가 없습니다.");
+        return;
+      }
+
+      setError("");
+      if (drawStraightUnderline(activeAnchor, detail.lineStyle || {}, detail.underlineStart || null)) {
+        statusEl.textContent = `밑줄 추가: ${activeAnchor.text}`;
       }
     });
   </script>
