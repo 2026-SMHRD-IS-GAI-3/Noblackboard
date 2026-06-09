@@ -1,6 +1,7 @@
 package com.airnote.controller;
 
 import java.io.IOException;
+import java.util.List;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.MultipartConfig;
@@ -13,86 +14,114 @@ import javax.servlet.http.Part;
 import com.airnote.common.ApiResponse;
 import com.airnote.model.RecordImage;
 import com.airnote.service.RecordService;
+import com.google.gson.Gson;
 
-@WebServlet("/api/records/save-image")
+// 발표 화면 캡처 이미지 저장과 저장 이미지 목록 조회를 처리하는 컨트롤러
+
+@WebServlet(urlPatterns = { "/api/records/save-image", "/api/records/images" })
 @MultipartConfig(fileSizeThreshold = 1024 * 1024, maxFileSize = 1024 * 1024 * 10, maxRequestSize = 1024 * 1024 * 20)
 public class RecordController extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 
 	private RecordService recordService = new RecordService();
+	private Gson gson = new Gson();
 
 	@Override
 	protected void doPost(HttpServletRequest request, HttpServletResponse response)
 			throws ServletException, IOException {
 
 		request.setCharacterEncoding("UTF-8");
-		response.setCharacterEncoding("UTF-8");
 		response.setContentType("application/json; charset=UTF-8");
 
+		String uri = request.getRequestURI();
+
+		if (uri.endsWith("/api/records/save-image")) {
+			saveImage(request, response);
+			return;
+		}
+
+		response.getWriter().write(gson.toJson(ApiResponse.error("지원하지 않는 POST 요청입니다.")));
+	}
+
+	@Override
+	protected void doGet(HttpServletRequest request, HttpServletResponse response)
+			throws ServletException, IOException {
+
+		request.setCharacterEncoding("UTF-8");
+		response.setContentType("application/json; charset=UTF-8");
+
+		String uri = request.getRequestURI();
+
+		if (uri.endsWith("/api/records/images")) {
+			getImages(request, response);
+			return;
+		}
+
+		response.getWriter().write(gson.toJson(ApiResponse.error("지원하지 않는 GET 요청입니다.")));
+	}
+
+	private void saveImage(HttpServletRequest request, HttpServletResponse response)
+			throws IOException, ServletException {
+
 		try {
-			// 1. 프론트/Postman에서 보낸 값 꺼내기
-			String presentationIdText = request.getParameter("presentationId");
-			String pageNoText = request.getParameter("pageNo");
+			String presentationIdStr = request.getParameter("presentationId");
+			String pageNoStr = request.getParameter("pageNo");
 
-			// 2. 필수값 검사
-			if (isBlank(presentationIdText)) {
-				writeJson(response, ApiResponse.fail("presentationId가 없습니다"));
+			if (presentationIdStr == null || presentationIdStr.trim().isEmpty()) {
+				response.getWriter().write(gson.toJson(ApiResponse.error("presentationId가 필요합니다.")));
 				return;
 			}
 
-			if (isBlank(pageNoText)) {
-				writeJson(response, ApiResponse.fail("pageNo가 없습니다"));
+			if (pageNoStr == null || pageNoStr.trim().isEmpty()) {
+				response.getWriter().write(gson.toJson(ApiResponse.error("pageNo가 필요합니다.")));
 				return;
 			}
 
-			// 3. 숫자로 변환
-			int presentationId = Integer.parseInt(presentationIdText);
-			int pageNo = Integer.parseInt(pageNoText);
+			int presentationId = Integer.parseInt(presentationIdStr);
+			int pageNo = Integer.parseInt(pageNoStr);
 
-			// 4. 이미지 파일 꺼내기
 			Part imagePart = request.getPart("image");
 
 			if (imagePart == null || imagePart.getSize() == 0) {
-				writeJson(response, ApiResponse.fail("저장할 캡처 이미지가 없습니다"));
+				response.getWriter().write(gson.toJson(ApiResponse.error("image 파일이 필요합니다.")));
 				return;
 			}
 
-			// 5. 서비스에게 이미지 저장 + DB 저장 요청
-			RecordImage recordImage = recordService.saveCaptureImage(getServletContext(), presentationId, pageNo,
-					imagePart);
+			RecordImage recordImage = recordService.saveCaptureImage(request.getServletContext(), presentationId,
+					pageNo, imagePart);
 
-			// 6. 응답 data 만들기
-			String dataJson = makeRecordImageJson(recordImage);
+			if (recordImage == null) {
+				response.getWriter().write(gson.toJson(ApiResponse.error("이미지 저장 실패")));
+				return;
+			}
 
-			// 7. 성공 응답
-			writeJson(response, ApiResponse.success("발표 화면 이미지 저장 성공", dataJson));
-
-		} catch (NumberFormatException e) {
-			writeJson(response, ApiResponse.fail("presentationId 또는 pageNo는 숫자여야 합니다"));
-
-		} catch (IllegalStateException e) {
-			e.printStackTrace();
-			writeJson(response, ApiResponse.fail("업로드 가능한 파일 크기를 초과했습니다"));
+			response.getWriter().write(gson.toJson(ApiResponse.success("발표 화면 이미지 저장 성공", recordImage)));
 
 		} catch (Exception e) {
 			e.printStackTrace();
-			writeJson(response, ApiResponse.fail("발표 화면 이미지 저장 실패"));
+			response.getWriter().write(gson.toJson(ApiResponse.error("이미지 저장 처리 중 오류가 발생했습니다.")));
 		}
 	}
 
-	private String makeRecordImageJson(RecordImage recordImage) {
-		return "{" + "\"recordImageId\":" + recordImage.getRecordImageId() + "," + "\"presentationId\":"
-				+ recordImage.getPresentationId() + "," + "\"pageNo\":" + recordImage.getPageNo() + ","
-				+ "\"imageUrl\":\"" + ApiResponse.escape(recordImage.getImageUrl()) + "\"," + "\"savedFileName\":\""
-				+ ApiResponse.escape(recordImage.getSavedFileName()) + "\"," + "\"fileSize\":"
-				+ recordImage.getFileSize() + "}";
-	}
+	private void getImages(HttpServletRequest request, HttpServletResponse response) throws IOException {
 
-	private void writeJson(HttpServletResponse response, String json) throws IOException {
-		response.getWriter().write(json);
-	}
+		try {
+			String presentationIdStr = request.getParameter("presentationId");
 
-	private boolean isBlank(String value) {
-		return value == null || value.trim().isEmpty();
+			if (presentationIdStr == null || presentationIdStr.trim().isEmpty()) {
+				response.getWriter().write(gson.toJson(ApiResponse.error("presentationId가 필요합니다.")));
+				return;
+			}
+
+			int presentationId = Integer.parseInt(presentationIdStr);
+
+			List<RecordImage> images = recordService.getImagesByPresentationId(presentationId);
+
+			response.getWriter().write(gson.toJson(ApiResponse.success("저장 이미지 목록 조회 성공", images)));
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			response.getWriter().write(gson.toJson(ApiResponse.error("저장 이미지 목록 조회 중 오류가 발생했습니다.")));
+		}
 	}
 }

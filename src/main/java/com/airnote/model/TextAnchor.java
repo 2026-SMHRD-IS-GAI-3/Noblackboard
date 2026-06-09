@@ -1,5 +1,7 @@
 package com.airnote.model;
 
+// 슬라이드 안 텍스트의 원문, 키워드, 좌표 정보를 담는 모델 클래스
+
 public class TextAnchor {
 
 	private int anchorId;

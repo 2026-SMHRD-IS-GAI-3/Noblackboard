@@ -8,6 +8,8 @@ import java.sql.Types;
 import com.airnote.model.PdfDocument;
 import com.airnote.util.DBUtil;
 
+// TB_PDF_DOCUMENT 테이블에 PDF 문서 정보를 저장/조회하는 DB 클래스
+
 public class PdfDocumentDAO {
 
 	public int insertPdfDocument(PdfDocument pdfDocument) {

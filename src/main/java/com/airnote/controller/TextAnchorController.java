@@ -12,6 +12,8 @@ import javax.servlet.http.HttpServletResponse;
 import com.airnote.model.TextAnchor;
 import com.airnote.service.TextAnchorService;
 
+// 특정 PDF/페이지의 텍스트 앵커 위치 목록을 조회하는 컨트롤러
+
 @WebServlet("/api/text-anchors")
 public class TextAnchorController extends HttpServlet {
 	private static final long serialVersionUID = 1L;

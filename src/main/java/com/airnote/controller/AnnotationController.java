@@ -11,6 +11,8 @@ import javax.servlet.http.HttpServletResponse;
 import com.airnote.model.Annotation;
 import com.airnote.service.AnnotationService;
 
+// 밑줄, 형광펜, 포인터 같은 판서 기록을 저장하는 컨트롤러
+
 @WebServlet("/api/annotations")
 public class AnnotationController extends HttpServlet {
 	private static final long serialVersionUID = 1L;

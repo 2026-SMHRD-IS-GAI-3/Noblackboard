@@ -1,5 +1,7 @@
 package com.airnote.model;
 
+// STT 문장과 선택된 텍스트 앵커 매칭 결과를 담는 모델 클래스
+
 public class AnchorMatchLog {
 
 	private int matchLogId;

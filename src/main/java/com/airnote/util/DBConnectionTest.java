@@ -1,5 +1,7 @@
 package com.airnote.util;
 
+// DB 연결이 정상인지 테스트하기 위한 확인용 클래스
+
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

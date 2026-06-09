@@ -1,5 +1,8 @@
 package com.airnote.model;
 
+// 업로드된 PDF 문서 정보를 담는 모델 클래스
+
+
 public class PdfDocument {
 
 	private int pdfId;

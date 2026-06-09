@@ -1,5 +1,7 @@
 package com.airnote.model;
 
+// 밑줄, 형광펜, 포인터 등 실제 판서 기록 정보를 담는 모델 클래스
+
 public class Annotation {
 
 	private int annotationId;

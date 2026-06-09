@@ -8,6 +8,8 @@ import java.sql.Types;
 import com.airnote.model.AnchorMatchLog;
 import com.airnote.util.DBUtil;
 
+// TB_ANCHOR_MATCH_LOG, TB_ANCHOR_MATCH_CANDIDATE에 음성 매칭 결과를 저장하는 DB 클래스
+
 public class AnchorMatchDAO {
 
 	// 앵커 매칭 로그 저장

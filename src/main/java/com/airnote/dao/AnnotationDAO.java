@@ -7,6 +7,8 @@ import java.sql.ResultSet;
 import com.airnote.model.Annotation;
 import com.airnote.util.DBUtil;
 
+// TB_ANNOTATION 테이블에 판서/도구 사용 기록을 저장하는 DB 클래스
+
 public class AnnotationDAO {
 
 	public int insertAnnotation(Annotation annotation) {

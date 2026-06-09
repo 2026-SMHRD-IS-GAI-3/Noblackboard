@@ -3,6 +3,8 @@ package com.airnote.service;
 import com.airnote.dao.PageActionDAO;
 import com.airnote.model.PageAction;
 
+// 페이지 이동 기록 저장 기능을 처리하는 서비스
+
 public class PageActionService {
 
 	private PageActionDAO pageActionDAO = new PageActionDAO();

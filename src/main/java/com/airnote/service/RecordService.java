@@ -1,7 +1,9 @@
 package com.airnote.service;
 
 import java.io.IOException;
+
 import java.nio.file.Paths;
+import java.util.List;
 
 import javax.servlet.ServletContext;
 import javax.servlet.http.Part;
@@ -9,6 +11,8 @@ import javax.servlet.http.Part;
 import com.airnote.dao.RecordDAO;
 import com.airnote.model.RecordImage;
 import com.airnote.util.FileUploadUtil;
+
+// 캡처 이미지 파일 저장, DB 저장, 이미지 목록 조회를 처리하는 서비스
 
 public class RecordService {
 
@@ -91,5 +95,9 @@ public class RecordService {
 		}
 
 		return "";
+	}
+
+	public List<RecordImage> getImagesByPresentationId(int presentationId) {
+		return recordDAO.selectImagesByPresentationId(presentationId);
 	}
 }

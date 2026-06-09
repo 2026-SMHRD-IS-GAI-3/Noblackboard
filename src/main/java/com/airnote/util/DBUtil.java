@@ -1,5 +1,7 @@
 package com.airnote.util;
 
+// db.properties를 읽어 Oracle DB 연결 객체를 만들어주는 공통 DB 유틸 클래스
+
 import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.DriverManager;

@@ -7,6 +7,8 @@ import java.sql.ResultSet;
 import com.airnote.model.PageAction;
 import com.airnote.util.DBUtil;
 
+// TB_PAGE_ACTION 테이블에 페이지 이동 기록을 저장하는 DB 클래스
+
 public class PageActionDAO {
 
 	// 페이지 이동 기록 저장

@@ -1,5 +1,7 @@
 package com.airnote.util;
 
+// 업로드된 PDF나 이미지 파일을 서버 폴더에 저장하는 공통 파일 저장 유틸 클래스
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;

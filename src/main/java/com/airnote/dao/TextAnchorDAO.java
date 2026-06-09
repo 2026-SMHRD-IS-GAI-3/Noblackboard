@@ -9,6 +9,8 @@ import java.util.List;
 import com.airnote.model.TextAnchor;
 import com.airnote.util.DBUtil;
 
+// TB_TEXT_ANCHOR 테이블에서 PDF 페이지별 텍스트 위치 정보를 조회하는 DB 클래스
+
 public class TextAnchorDAO {
 
 	public List<TextAnchor> selectTextAnchors(int pdfId, int pageNo) {

@@ -1,5 +1,7 @@
 package com.airnote.model;
 
+// 페이지 이동 전후 번호와 이동 종류를 담는 모델 클래스
+
 public class PageAction {
 
 	private int pageActionId;

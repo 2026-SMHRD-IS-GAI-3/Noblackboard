@@ -3,6 +3,8 @@ package com.airnote.service;
 import com.airnote.dao.PdfDocumentDAO;
 import com.airnote.model.PdfDocument;
 
+// PDF 파일 저장과 PDF 문서 정보 등록 흐름을 처리하는 서비스
+
 public class DocumentService {
 
 	private PdfDocumentDAO pdfDocumentDAO = new PdfDocumentDAO();

@@ -11,6 +11,8 @@ import javax.servlet.http.HttpServletResponse;
 import com.airnote.model.AnchorMatchLog;
 import com.airnote.service.AnchorMatchService;
 
+// STT 문장과 텍스트 앵커 매칭 로그를 저장하는 컨트롤러
+
 @WebServlet("/api/anchor-match/logs")
 public class AnchorMatchController extends HttpServlet {
 	private static final long serialVersionUID = 1L;

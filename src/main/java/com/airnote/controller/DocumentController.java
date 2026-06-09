@@ -14,6 +14,8 @@ import javax.servlet.http.Part;
 
 import com.airnote.service.DocumentService;
 
+// PDF 업로드 요청을 받아 문서 정보를 저장하는 API 컨트롤러
+
 @WebServlet("/api/documents/upload")
 @MultipartConfig(fileSizeThreshold = 1024 * 1024, maxFileSize = 1024 * 1024 * 50, maxRequestSize = 1024 * 1024 * 60)
 public class DocumentController extends HttpServlet {

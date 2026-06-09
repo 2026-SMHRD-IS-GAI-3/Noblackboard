@@ -1,5 +1,7 @@
 package com.airnote.model;
 
+// 저장된 발표 화면 이미지의 경로, 파일명, 크기 정보를 담는 모델 클래스
+
 public class RecordImage {
 
 	private int recordImageId;
@@ -9,6 +11,7 @@ public class RecordImage {
 	private String originalFileName;
 	private String savedFileName;
 	private long fileSize;
+	private String createdAt;
 
 	public int getRecordImageId() {
 		return recordImageId;
@@ -65,4 +68,26 @@ public class RecordImage {
 	public void setFileSize(long fileSize) {
 		this.fileSize = fileSize;
 	}
+
+	public String getCreatedAt() {
+		return createdAt;
+	}
+
+	public void setCreatedAt(String createdAt) {
+		this.createdAt = createdAt;
+	}
+	
+	// TB_RECORD_IMAGE 테이블 한 줄 = RecordImage 객체 하나
+	
+	
+	// 지금 모델 기준 DB 컬럼 매칭
+	// RECORD_IMAGE_ID  	→ recordImageId
+	// PRESENTATION_ID      → presentationId
+	// PAGE_NO              → pageNo
+	// IMAGE_URL            → imageUrl
+	// ORIGINAL_FILE_NAME   → originalFileName
+	// SAVED_FILE_NAME      → savedFileName
+	// FILE_SIZE            → fileSize
+	// CREATED_AT           → createdAt
+	
 }

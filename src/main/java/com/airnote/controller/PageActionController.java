@@ -11,6 +11,8 @@ import javax.servlet.http.HttpServletResponse;
 import com.airnote.model.PageAction;
 import com.airnote.service.PageActionService;
 
+// 다음,이전 페이지 이동 기록을 저장하는 컨트롤러
+
 @WebServlet("/api/page-actions")
 public class PageActionController extends HttpServlet {
 	private static final long serialVersionUID = 1L;

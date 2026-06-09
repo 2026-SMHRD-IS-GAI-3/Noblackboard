@@ -1,21 +1,21 @@
 package com.airnote.model;
 
-import java.sql.Date;
+// 발표 세션 정보와 저장 이미지 목록 recordImages를 담는 모델 클래스
+
+import java.util.List;
 
 public class Presentation {
 
 	private int presentationId;
 	private int userId;
 	private int pdfId;
-	private Date startTime;
-	private Date endTime;
+	private String startTime;
+	private String endTime;
+
+	// 발표 상세 조회에 같이 붙일 저장 이미지 목록
+	private List<RecordImage> recordImages;
 
 	public Presentation() {
-	}
-
-	public Presentation(int userId, int pdfId) {
-		this.userId = userId;
-		this.pdfId = pdfId;
 	}
 
 	public int getPresentationId() {
@@ -42,19 +42,27 @@ public class Presentation {
 		this.pdfId = pdfId;
 	}
 
-	public Date getStartTime() {
+	public String getStartTime() {
 		return startTime;
 	}
 
-	public void setStartTime(Date startTime) {
+	public void setStartTime(String startTime) {
 		this.startTime = startTime;
 	}
 
-	public Date getEndTime() {
+	public String getEndTime() {
 		return endTime;
 	}
 
-	public void setEndTime(Date endTime) {
+	public void setEndTime(String endTime) {
 		this.endTime = endTime;
+	}
+
+	public List<RecordImage> getRecordImages() {
+		return recordImages;
+	}
+
+	public void setRecordImages(List<RecordImage> recordImages) {
+		this.recordImages = recordImages;
 	}
 }
