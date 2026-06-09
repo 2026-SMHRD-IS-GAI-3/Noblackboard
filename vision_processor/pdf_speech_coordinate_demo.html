@@ -157,7 +157,7 @@
       </div>
       <div id="selectedAnchorLabel" class="status-line">현재 선택된 앵커: 없음</div>
       <p>
-        좌표계: <strong>pdfjs_canvas_viewport</strong>.
+        좌표계: <strong>CANVAS_PX</strong>.
         px 좌표는 PDF.js 렌더링 scale이 적용된 canvas viewport 기준이고,
         ratio 좌표는 현재 페이지 canvas 크기 대비 비율입니다.
       </p>
@@ -184,15 +184,28 @@
     </div>
   </div>
 
+  <div class="panel">
+    <h2>Rev2 Table JSON Preview</h2>
+    <pre id="tableOutput">PDF load required.</pre>
+  </div>
+
   <script>
     const PDF_SCALE = 1.5;
-    const COORDINATE_SYSTEM = "pdfjs_canvas_viewport";
-    const AUTO_SELECT_THRESHOLD = 0.85;
-    const AMBIGUITY_GAP_THRESHOLD = 0.15;
+    const COORDINATE_SYSTEM = "CANVAS_PX";
+    const CURRENT_PAGE_AUTO_SELECT_THRESHOLD = 0.82;
+    const AMBIGUITY_GAP_THRESHOLD = 0.12;
+    const CANDIDATE_LOG_LIMIT = 5;
+    const INTERIM_MATCH_DEBOUNCE_MS = 250;
+    const ACTIVE_ANCHOR_MAX_AGE_MS = 10000;
+    const PRESENTATION_ID = 1;
+    const PDF_ID = 1;
     const MAX_PHRASE_LENGTH = 6;
     const STOP_WORDS = new Set([
       "이", "그", "저", "수", "것", "등", "및", "에", "은", "는",
-      "가", "을", "를", "로", "ai"
+      "가", "을", "를", "로", "으로", "에서", "부터", "까지", "도", "만",
+      "그리고", "그래서", "그러면", "여기", "여기서", "이제", "지금",
+      "입니다", "합니다", "됩니다", "했구요", "했고", "하는", "되는",
+      "ai"
     ]);
 
     const pdfInput = document.getElementById("pdfInput");
@@ -208,6 +221,7 @@
     const candidateOutput = document.getElementById("candidateOutput");
     const rawOutput = document.getElementById("rawOutput");
     const anchorOutput = document.getElementById("anchorOutput");
+    const tableOutput = document.getElementById("tableOutput");
     const selectedAnchorLabel = document.getElementById("selectedAnchorLabel");
     const pdfCanvas = document.getElementById("pdfCanvas");
     const anchorLayer = document.getElementById("anchorLayer");
@@ -220,8 +234,22 @@
     let currentPage = 1;
     let pdfState = null;
     let activeAnchor = null;
+    let activeMatchLog = null;
     let recognition = null;
+    let speechMatchTimer = null;
+    let finalSpeechTranscript = "";
+    let latestSttConfidence = null;
+    let lastMatchQueryNorm = "";
+    let lastAnchorResult = null;
+    let activeAnchorSelectedAt = 0;
     let straightUnderlines = [];
+    let dbTextAnchors = [];
+    let dbMatchLogs = [];
+    let dbMatchCandidates = [];
+    let dbAnnotations = [];
+    let matchLogSeq = 1;
+    let candidateSeq = 1;
+    let annotationSeq = 1;
 
     function round2(value) {
       return Number(Number(value).toFixed(2));
@@ -229,6 +257,77 @@
 
     function round4(value) {
       return Number(Number(value).toFixed(4));
+    }
+
+    function clampScore(value) {
+      return round4(Math.max(0, Math.min(1, Number(value) || 0)));
+    }
+
+    function createAnchorDbId(pageNumber, anchorIndex) {
+      return pageNumber * 100000 + anchorIndex;
+    }
+
+    function toKeywordString(tokens) {
+      return [...new Set(tokens.filter((token) => !STOP_WORDS.has(token)))].join(",");
+    }
+
+    function toDbTextAnchor(anchor) {
+      const tokens = tokenize(anchor.text);
+
+      return {
+        ANCHOR_ID: anchor.anchorDbId,
+        PDF_ID,
+        PAGE_NO: anchor.page,
+        TEXT_ORIGINAL: anchor.text,
+        TEXT_NORMALIZED: anchor.normalizedText,
+        KEYWORDS: toKeywordString(tokens),
+        X_PX: anchor.x,
+        Y_PX: anchor.y,
+        WIDTH_PX: anchor.width,
+        HEIGHT_PX: anchor.height,
+        X_RATIO: anchor.xRatio,
+        Y_RATIO: anchor.yRatio,
+        WIDTH_RATIO: anchor.widthRatio,
+        HEIGHT_RATIO: anchor.heightRatio,
+        START_X_PX: anchor.startX,
+        START_Y_PX: anchor.startY,
+        END_X_PX: anchor.endX,
+        END_Y_PX: anchor.endY,
+        START_X_RATIO: anchor.startXRatio,
+        START_Y_RATIO: anchor.startYRatio,
+        END_X_RATIO: anchor.endXRatio,
+        END_Y_RATIO: anchor.endYRatio,
+        COORD_SYSTEM: COORDINATE_SYSTEM,
+        COORD_BASE_WIDTH: anchor.pageWidth,
+        COORD_BASE_HEIGHT: anchor.pageHeight,
+        EXTRACT_SOURCE: "PDF_TEXT",
+        CONFIDENCE: 1.0,
+        ANCHOR_LEVEL: tokens.length <= 1 ? "WORD" : "LINE",
+        SORT_ORDER: anchor.sortOrder,
+        USE_YN: "Y",
+        CREATED_AT: new Date().toISOString()
+      };
+    }
+
+    function getDecisionThreshold(anchor) {
+      return CURRENT_PAGE_AUTO_SELECT_THRESHOLD;
+    }
+
+    function getTablePreview() {
+      return {
+        textAnchor: dbTextAnchors.slice(0, 5),
+        matchLog: dbMatchLogs.at(-1) || null,
+        matchCandidates: dbMatchCandidates
+          .filter((candidate) => candidate.MATCH_LOG_ID === activeMatchLog?.MATCH_LOG_ID)
+          .slice(0, CANDIDATE_LOG_LIMIT),
+        annotation: dbAnnotations.at(-1) || null,
+        counts: {
+          TB_TEXT_ANCHOR: dbTextAnchors.length,
+          TB_ANCHOR_MATCH_LOG: dbMatchLogs.length,
+          TB_ANCHOR_MATCH_CANDIDATE: dbMatchCandidates.length,
+          TB_ANNOTATION: dbAnnotations.length
+        }
+      };
     }
 
     function setError(message) {
@@ -254,8 +353,41 @@
 
       return spaced
         .split(/\s+/)
-        .map((token) => token.replace(/(은|는|이|가|을|를|로|으로|에|에서|부터|까지|께서|처럼|보다|도|만)$/u, ""))
+        .map((token) => token.replace(/(은|는|이|가|을|를|로|으로|에|에서|부터|까지|께서|처럼|보다|도|만|입니다|합니다|됩니다|했습니다|했고|하는|되는)$/u, ""))
+        .filter((token) => !STOP_WORDS.has(token))
         .filter(Boolean);
+    }
+
+    function getRecentSpeechQuery(text) {
+      const parts = String(text || "")
+        .split(/[.!?\n。！？]|(?:그리고|그래서|그러면|다음으로|이제)\s+/u)
+        .map((part) => part.trim())
+        .filter(Boolean);
+      return parts.at(-1) || String(text || "").trim();
+    }
+
+    function renderMatchResult(result) {
+      matchOutput.textContent = JSON.stringify(result, null, 2);
+      candidateOutput.textContent = JSON.stringify(result.matchCandidates || result.candidates || [], null, 2);
+
+      if (result.status === "anchor_selected") {
+        selectedAnchorLabel.textContent =
+          `현재 선택된 앵커: ${result.activeAnchor.text}`;
+        drawAnchorGuide(activeAnchor);
+        statusEl.textContent = `음성 매칭 완료: ${result.activeAnchor.text}`;
+        return;
+      }
+
+      selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
+      clearAnchorGuide();
+
+      if (result.matchStatus === "NOT_FOUND" && result.matchLog?.FAIL_REASON_CODE === "LOW_SCORE") {
+        statusEl.textContent = "매칭 보류: 후보 점수가 낮아 자동 강조하지 않았습니다.";
+      } else if (result.matchStatus === "AMBIGUOUS") {
+        statusEl.textContent = "매칭 보류: 후보가 애매해서 자동 강조하지 않았습니다.";
+      } else {
+        statusEl.textContent = "매칭 보류: 현재 페이지에서 맞는 텍스트를 찾지 못했습니다.";
+      }
     }
 
     function isWeakStandaloneText(text) {
@@ -411,6 +543,36 @@
       return true;
     }
 
+    function createDbAnnotation(anchor, style = {}, startPoint = null, sourceType = "VOICE_START") {
+      const box = getAnchorViewportBox(anchor);
+
+      if (!box) {
+        return null;
+      }
+
+      const startX = getUnderlineStartX(box, startPoint);
+      const y = box.y + box.height + Math.max(2, box.height * 0.12);
+      const annotation = {
+        ANNOTATION_ID: annotationSeq++,
+        PRESENTATION_ID,
+        PAGE_NO: anchor.page,
+        TOOL_TYPE: "UNDERLINE",
+        COLOR: style.color || "#e11d48",
+        START_X: round2(startX),
+        START_Y: round2(y),
+        END_X: round2(box.endX),
+        END_Y: round2(y),
+        ANCHOR_ID: anchor.anchorDbId,
+        MATCH_LOG_ID: activeMatchLog?.MATCH_LOG_ID || null,
+        SOURCE_TYPE: sourceType,
+        MATCH_CONFIDENCE: activeMatchLog ? activeMatchLog.TOP_SCORE : null,
+        CREATED_AT: new Date().toISOString()
+      };
+
+      dbAnnotations.push(annotation);
+      return annotation;
+    }
+
     function updatePageInfo() {
       const total = pdfDoc ? pdfDoc.numPages : "-";
       pageInfo.textContent = `현재 페이지: ${pdfDoc ? currentPage : "-"} / ${total}`;
@@ -423,6 +585,7 @@
 
       return {
         anchorId: anchor.anchorId,
+        anchorDbId: anchor.anchorDbId,
         page: anchor.page,
         text: anchor.text,
         x: anchor.x,
@@ -443,7 +606,8 @@
         endYRatio: anchor.endYRatio,
         pageWidth: anchor.pageWidth,
         pageHeight: anchor.pageHeight,
-        coordinateSystem: anchor.coordinateSystem
+        coordinateSystem: anchor.coordinateSystem,
+        tableAnchor: toDbTextAnchor(anchor)
       };
     }
 
@@ -504,6 +668,7 @@
 
       return {
         anchorId: `p${pageNumber}_a${String(anchorIndex).padStart(3, "0")}`,
+        anchorDbId: createAnchorDbId(pageNumber, anchorIndex),
         page: pageNumber,
         text,
         normalizedText: normalizeText(text),
@@ -526,8 +691,9 @@
         pageWidth: round2(pageWidth),
         pageHeight: round2(pageHeight),
         coordinateSystem: COORDINATE_SYSTEM,
-        source: "pdf_text_layer",
-        confidence: 1.0
+        source: "PDF_TEXT",
+        confidence: 1.0,
+        sortOrder: anchorIndex
       };
     }
 
@@ -597,8 +763,22 @@
       setError("");
       clearAnchorGuide();
       activeAnchor = null;
+      activeMatchLog = null;
+      finalSpeechTranscript = "";
+      latestSttConfidence = null;
+      lastMatchQueryNorm = "";
+      lastAnchorResult = null;
+      activeAnchorSelectedAt = 0;
       straightUnderlines = [];
+      dbTextAnchors = [];
+      dbMatchLogs = [];
+      dbMatchCandidates = [];
+      dbAnnotations = [];
+      matchLogSeq = 1;
+      candidateSeq = 1;
+      annotationSeq = 1;
       selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
+      transcriptEl.textContent = "아직 인식된 문장이 없습니다.";
       matchOutput.textContent = "아직 결과가 없습니다.";
       candidateOutput.textContent = "아직 후보가 없습니다.";
       statusEl.textContent = "PDF를 읽는 중입니다...";
@@ -654,6 +834,7 @@
         }
 
         const anchors = createTextAnchors(pageNumber, rawItems, pageWidth, pageHeight);
+        dbTextAnchors.push(...anchors.map(toDbTextAnchor));
         rawItemCount += rawItems.length;
         anchorCount += anchors.length;
 
@@ -689,6 +870,7 @@
       const currentPageData = getCurrentPageData();
       rawOutput.textContent = JSON.stringify(currentPageData?.rawItems || [], null, 2);
       anchorOutput.textContent = JSON.stringify(currentPageData?.anchors || [], null, 2);
+      tableOutput.textContent = JSON.stringify(getTablePreview(), null, 2);
     }
 
     function scoreAnchor(anchor, query, currentPageNumber) {
@@ -705,28 +887,37 @@
         return null;
       }
 
-      const overlapCount = anchorTokens.filter((token) => queryTokens.includes(token)).length;
+      const matchedKeywords = anchorTokens.filter((token) => queryTokens.includes(token));
+      const missingKeywords = anchorTokens.filter((token) => !queryTokens.includes(token));
+      const overlapCount = matchedKeywords.length;
       const overlapRatio = anchorTokens.length
         ? overlapCount / anchorTokens.length
         : 0;
+      const positionScore = anchor.page === currentPageNumber ? 1 : 0.25;
       const pageBoost = anchor.page === currentPageNumber ? 0.05 : 0;
       let score = 0;
       let matchType = "weakKeywordMatch";
+      let textSimScore = 0;
 
       if (queryNorm === anchorNorm) {
         score = 1.0;
+        textSimScore = 1.0;
         matchType = "exact";
       } else if (queryNorm.includes(anchorNorm)) {
         score = anchorTokens.length >= 3 ? 0.96 : 0.82;
+        textSimScore = anchorTokens.length >= 3 ? 0.95 : 0.78;
         matchType = anchorTokens.length >= 2 ? "phraseMatch" : "normalizedIncludes";
       } else if (anchorNorm.includes(queryNorm) && queryNorm.length >= 2) {
         score = 0.78;
+        textSimScore = 0.72;
         matchType = "phraseMatch";
       } else if (overlapCount >= 2) {
         score = 0.62 + Math.min(0.25, overlapRatio * 0.25);
+        textSimScore = 0.55 + Math.min(0.25, overlapRatio * 0.25);
         matchType = "contextMatch";
       } else if (overlapCount === 1 && queryTokens.length >= 2 && anchorTokens.length >= 2) {
         score = 0.48;
+        textSimScore = 0.42;
         matchType = "weakKeywordMatch";
       }
 
@@ -738,7 +929,12 @@
 
       return {
         anchor,
-        score: round2(score),
+        score: clampScore(score),
+        keywordScore: clampScore(overlapRatio),
+        textSimScore: clampScore(textSimScore),
+        positionScore: clampScore(positionScore),
+        matchedKeywords,
+        missingKeywords,
         matchType
       };
     }
@@ -750,11 +946,7 @@
 
       const currentPageData = getCurrentPageData();
       const currentAnchors = currentPageData?.anchors || [];
-      const allAnchors = pdfState.pages.flatMap((page) => page.anchors);
-      const searchAnchors = [
-        ...currentAnchors,
-        ...allAnchors.filter((anchor) => anchor.page !== currentPage)
-      ];
+      const searchAnchors = currentAnchors;
 
       const scored = searchAnchors
         .map((anchor) => scoreAnchor(anchor, query, currentPage))
@@ -776,7 +968,7 @@
       return unique;
     }
 
-    function selectActiveAnchor(query) {
+    function selectActiveAnchorLegacy(query) {
       const candidates = findAnchorCandidates(query);
 
       if (candidates.length === 0) {
@@ -801,7 +993,7 @@
       }));
 
       if (
-        first.score >= AUTO_SELECT_THRESHOLD &&
+        first.score >= getDecisionThreshold(first.anchor) &&
         gap >= AMBIGUITY_GAP_THRESHOLD
       ) {
         activeAnchor = first.anchor;
@@ -824,26 +1016,227 @@
       };
     }
 
-    function showAnchorResult(query) {
+    function toDbMatchCandidate(candidate, matchLogId, rankNo, selectedAnchorDbId, topScore) {
+      const anchor = candidate.anchor;
+      let status = "REJECTED";
+      let rejectReason = "";
+
+      if (anchor.anchorDbId === selectedAnchorDbId) {
+        status = "SELECTED";
+      } else if (rankNo <= 2 && Math.abs(topScore - candidate.score) < AMBIGUITY_GAP_THRESHOLD) {
+        status = "TIED";
+        rejectReason = "Top score gap is too small.";
+      } else if (candidate.score < getDecisionThreshold(anchor)) {
+        status = "LOW_SCORE";
+        rejectReason = "Candidate score is under threshold.";
+      } else if (anchor.page !== currentPage) {
+        status = "PAGE_MISMATCH";
+        rejectReason = "Candidate is not on current page.";
+      }
+
+      return {
+        CANDIDATE_ID: candidateSeq++,
+        MATCH_LOG_ID: matchLogId,
+        ANCHOR_ID: anchor.anchorDbId,
+        RANK_NO: rankNo,
+        ANCHOR_TEXT_SNAPSHOT: anchor.text,
+        ANCHOR_NORMALIZED_SNAPSHOT: anchor.normalizedText,
+        MATCH_SCORE: candidate.score,
+        KEYWORD_SCORE: candidate.keywordScore,
+        TEXT_SIM_SCORE: candidate.textSimScore,
+        POSITION_SCORE: candidate.positionScore,
+        PAGE_MATCH_YN: anchor.page === currentPage ? "Y" : "N",
+        MATCHED_KEYWORDS: candidate.matchedKeywords.join(","),
+        MISSING_KEYWORDS: candidate.missingKeywords.join(","),
+        SELECTED_YN: anchor.anchorDbId === selectedAnchorDbId ? "Y" : "N",
+        CANDIDATE_STATUS: status,
+        REJECT_REASON: rejectReason || null,
+        CREATED_AT: new Date().toISOString()
+      };
+    }
+
+    function createDbMatchLog(query, candidates, decision, startedAt, actionType = "UNDERLINE") {
+      const first = candidates[0] || null;
+      const second = candidates[1] || null;
+      const topScore = first?.score || 0;
+      const secondScore = second?.score || 0;
+      const gap = first && second ? round4(topScore - secondScore) : first ? 1 : 0;
+      const threshold = first ? getDecisionThreshold(first.anchor) : CURRENT_PAGE_AUTO_SELECT_THRESHOLD;
+      const queryTokens = tokenize(query).filter((token) => !STOP_WORDS.has(token));
+      const matchLog = {
+        MATCH_LOG_ID: matchLogSeq++,
+        PRESENTATION_ID,
+        PDF_ID,
+        PAGE_NO: currentPage,
+        STT_TEXT: query,
+        STT_NORMALIZED: normalizeText(query),
+        EXTRACTED_KEYWORDS: toKeywordString(queryTokens),
+        STT_CONFIDENCE: latestSttConfidence,
+        MATCH_STATUS: decision.status,
+        SELECTED_ANCHOR_ID: decision.selectedAnchor?.anchorDbId || null,
+        TOP_SCORE: clampScore(topScore),
+        SECOND_SCORE: clampScore(secondScore),
+        SCORE_GAP: clampScore(gap),
+        CANDIDATE_COUNT: candidates.length,
+        THRESHOLD_SCORE: threshold,
+        AMBIGUOUS_GAP: AMBIGUITY_GAP_THRESHOLD,
+        FAIL_REASON_CODE: decision.failReasonCode,
+        DECISION_REASON: decision.reason,
+        MATCH_ALGORITHM: "HYBRID",
+        ACTION_TYPE: actionType,
+        PROCESS_TIME_MS: Math.max(0, Math.round(performance.now() - startedAt)),
+        CREATED_AT: new Date().toISOString()
+      };
+      const selectedAnchorDbId = decision.selectedAnchor?.anchorDbId || null;
+      const candidateRows = candidates
+        .slice(0, CANDIDATE_LOG_LIMIT)
+        .map((candidate, index) =>
+          toDbMatchCandidate(candidate, matchLog.MATCH_LOG_ID, index + 1, selectedAnchorDbId, topScore)
+        );
+
+      dbMatchLogs.push(matchLog);
+      dbMatchCandidates.push(...candidateRows);
+      activeMatchLog = matchLog;
+
+      return { matchLog, candidateRows };
+    }
+
+    function selectActiveAnchor(query) {
+      const startedAt = performance.now();
+      const candidates = findAnchorCandidates(query);
+
+      if (candidates.length === 0) {
+        activeAnchor = null;
+        activeAnchorSelectedAt = 0;
+        const decision = {
+          status: "NOT_FOUND",
+          selectedAnchor: null,
+          failReasonCode: "NO_CANDIDATE",
+          reason: "No TEXT_ANCHOR candidate was found in the current PDF."
+        };
+        const db = createDbMatchLog(query, candidates, decision, startedAt);
+
+        return {
+          status: "anchor_not_found",
+          matchStatus: decision.status,
+          query,
+          reason: decision.reason,
+          candidates: [],
+          matchLog: db.matchLog,
+          matchCandidates: db.candidateRows
+        };
+      }
+
+      const first = candidates[0];
+      const second = candidates[1];
+      const gap = second ? round4(first.score - second.score) : 1;
+      const threshold = getDecisionThreshold(first.anchor);
+      const candidateSummary = candidates.slice(0, 8).map((candidate) => ({
+        anchorId: candidate.anchor.anchorId,
+        anchorDbId: candidate.anchor.anchorDbId,
+        page: candidate.anchor.page,
+        text: candidate.anchor.text,
+        score: candidate.score,
+        keywordScore: candidate.keywordScore,
+        textSimScore: candidate.textSimScore,
+        positionScore: candidate.positionScore,
+        matchType: candidate.matchType
+      }));
+
+      if (first.score >= threshold && gap >= AMBIGUITY_GAP_THRESHOLD) {
+        activeAnchor = first.anchor;
+        activeAnchorSelectedAt = performance.now();
+        const decision = {
+          status: "SELECTED",
+          selectedAnchor: first.anchor,
+          failReasonCode: null,
+          reason: `Selected by score ${first.score} and gap ${gap}.`
+        };
+        const db = createDbMatchLog(query, candidates, decision, startedAt);
+
+        return {
+          status: "anchor_selected",
+          matchStatus: decision.status,
+          query,
+          activeAnchor: getDisplayAnchor(first.anchor),
+          score: first.score,
+          scoreGap: gap,
+          matchType: first.matchType,
+          candidates: candidateSummary.slice(1),
+          matchLog: db.matchLog,
+          matchCandidates: db.candidateRows
+        };
+      }
+
+      activeAnchor = null;
+      activeAnchorSelectedAt = 0;
+      const decision = {
+        status: first.score < threshold ? "NOT_FOUND" : "AMBIGUOUS",
+        selectedAnchor: null,
+        failReasonCode: first.score < threshold ? "LOW_SCORE" : "LOW_GAP",
+        reason:
+          first.score < threshold
+            ? `Top score ${first.score} is under threshold ${threshold}.`
+            : `Top score gap ${gap} is under ambiguous gap ${AMBIGUITY_GAP_THRESHOLD}.`
+      };
+      const db = createDbMatchLog(query, candidates, decision, startedAt);
+
+      return {
+        status: decision.status === "NOT_FOUND" ? "anchor_not_found" : "anchor_ambiguous",
+        matchStatus: decision.status,
+        query,
+        reason: decision.reason,
+        score: first.score,
+        scoreGap: gap,
+        candidates: candidateSummary,
+        matchLog: db.matchLog,
+        matchCandidates: db.candidateRows
+      };
+    }
+
+    function showAnchorResult(query, options = {}) {
+      const trimmedQuery = getRecentSpeechQuery(query);
+      const normalizedQuery = normalizeText(trimmedQuery);
+
+      if (!trimmedQuery || !normalizedQuery) {
+        return;
+      }
+
+      if (!options.forceNewLog && normalizedQuery === lastMatchQueryNorm && lastAnchorResult) {
+        renderMatchResult(lastAnchorResult);
+        refreshJsonPanels();
+        return;
+      }
+
+      const result = selectActiveAnchor(trimmedQuery);
+      lastMatchQueryNorm = normalizedQuery;
+      lastAnchorResult = result;
+
+      renderMatchResult(result);
+      refreshJsonPanels();
+    }
+
+    function scheduleAnchorResult(query, isFinal) {
       const trimmedQuery = String(query || "").trim();
 
       if (!trimmedQuery) {
         return;
       }
 
-      const result = selectActiveAnchor(trimmedQuery);
-
-      matchOutput.textContent = JSON.stringify(result, null, 2);
-      candidateOutput.textContent = JSON.stringify(result.candidates || [], null, 2);
-
-      if (result.status === "anchor_selected") {
-        selectedAnchorLabel.textContent =
-          `현재 선택된 앵커: ${result.activeAnchor.text}`;
-        drawAnchorGuide(activeAnchor);
-      } else {
-        selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
-        clearAnchorGuide();
+      if (speechMatchTimer) {
+        clearTimeout(speechMatchTimer);
+        speechMatchTimer = null;
       }
+
+      if (isFinal) {
+        showAnchorResult(trimmedQuery);
+        return;
+      }
+
+      speechMatchTimer = setTimeout(() => {
+        speechMatchTimer = null;
+        showAnchorResult(trimmedQuery);
+      }, INTERIM_MATCH_DEBOUNCE_MS);
     }
 
     function setupSpeechRecognition() {
@@ -869,17 +1262,43 @@
       };
 
       speech.onresult = (event) => {
-        let latestText = "";
+        let interimText = "";
+        let latestFinalText = "";
+        let latestQueryText = "";
+        let hasFinal = false;
 
         for (let index = event.resultIndex; index < event.results.length; index += 1) {
-          latestText += event.results[index][0].transcript;
+          const result = event.results[index];
+          const transcript = result[0].transcript;
+          latestSttConfidence = Number.isFinite(result[0].confidence)
+            ? clampScore(result[0].confidence)
+            : latestSttConfidence;
+          hasFinal = hasFinal || event.results[index].isFinal;
+
+          if (result.isFinal) {
+            latestFinalText += transcript;
+            latestQueryText = transcript;
+          } else {
+            interimText += transcript;
+            latestQueryText = interimText;
+          }
         }
 
-        transcriptEl.textContent = latestText || "인식 중...";
-        showAnchorResult(latestText);
+        if (latestFinalText.trim()) {
+          finalSpeechTranscript = `${finalSpeechTranscript} ${latestFinalText}`.replace(/\s+/g, " ").trim();
+        }
+
+        transcriptEl.textContent =
+          `${finalSpeechTranscript}${interimText ? ` ${interimText}` : ""}`.trim() ||
+          "인식 중...";
+        scheduleAnchorResult(latestQueryText, hasFinal);
       };
 
       speech.onend = () => {
+        if (speechMatchTimer) {
+          clearTimeout(speechMatchTimer);
+          speechMatchTimer = null;
+        }
         statusEl.textContent = "음성 인식이 중지되었습니다.";
       };
 
@@ -907,6 +1326,9 @@
 
       currentPage -= 1;
       activeAnchor = null;
+      activeAnchorSelectedAt = 0;
+      lastAnchorResult = null;
+      lastMatchQueryNorm = "";
       selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
       clearAnchorGuide();
       await renderPage(currentPage);
@@ -920,6 +1342,9 @@
 
       currentPage += 1;
       activeAnchor = null;
+      activeAnchorSelectedAt = 0;
+      lastAnchorResult = null;
+      lastMatchQueryNorm = "";
       selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
       clearAnchorGuide();
       await renderPage(currentPage);
@@ -951,13 +1376,31 @@
         return;
       }
 
+      if (detail.phase && detail.phase !== "start") {
+        return;
+      }
+
       if (!activeAnchor || activeAnchor.page !== currentPage) {
         setError("밑줄을 그을 현재 텍스트 앵커가 없습니다.");
         return;
       }
 
+      if (
+        !activeAnchorSelectedAt ||
+        performance.now() - activeAnchorSelectedAt > ACTIVE_ANCHOR_MAX_AGE_MS
+      ) {
+        activeAnchor = null;
+        activeAnchorSelectedAt = 0;
+        selectedAnchorLabel.textContent = "현재 선택된 앵커: 없음";
+        clearAnchorGuide();
+        setError("음성 매칭이 오래되었습니다. 밑줄을 그을 문장을 다시 말해 주세요.");
+        return;
+      }
+
       setError("");
       if (drawStraightUnderline(activeAnchor, detail.lineStyle || {}, detail.underlineStart || null)) {
+        createDbAnnotation(activeAnchor, detail.lineStyle || {}, detail.underlineStart || null, "VOICE_START");
+        refreshJsonPanels();
         statusEl.textContent = `밑줄 추가: ${activeAnchor.text}`;
       }
     });

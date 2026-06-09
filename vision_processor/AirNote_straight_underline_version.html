@@ -1,0 +1,3470 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>AirNote 반듯한 밑줄 테스트</title>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+
+    h2 {
+      margin-top: 0;
+    }
+
+    #status {
+      margin-bottom: 10px;
+      color: #00ff99;
+      font-weight: bold;
+    }
+
+    .controls {
+      width: 620px;
+      margin-bottom: 10px;
+      padding: 10px;
+      background: #1b1b1b;
+      border: 1px solid #444;
+      line-height: 1.8;
+    }
+
+    .controls button,
+    .controls label {
+      margin-right: 12px;
+    }
+
+    .controls button {
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+
+    #handConfig,
+    #calibrationStatus {
+      color: #ffd966;
+      font-weight: bold;
+    }
+
+    #calibrationStatus {
+      margin-top: 8px;
+      padding: 10px;
+      color: #dff6ff;
+      font-size: 13px;
+      line-height: 1.55;
+      background: #10212a;
+      border: 1px solid #28576b;
+      border-radius: 6px;
+    }
+
+    #calibrationStatus .cal-title {
+      color: #9bdcff;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    #calibrationStatus .cal-pose {
+      color: #ffd966;
+      font-weight: bold;
+      margin: 4px 0;
+    }
+
+    #calibrationStatus .cal-counts {
+      color: #d6d6d6;
+    }
+
+    #calibrationStatus .cal-success {
+      color: #00ff99;
+      font-weight: bold;
+    }
+
+    #calibrationStatus .cal-warn {
+      color: #ffb4b4;
+      font-weight: bold;
+    }
+
+    .camera-box {
+      position: relative;
+      width: 960px;
+      height: 540px;
+      max-width: 100%;
+      border: 2px solid #555;
+      background: black;
+      overflow: hidden;
+    }
+
+    video {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    .gesture-debug {
+      width: 620px;
+      margin-top: 10px;
+      padding: 10px;
+      background: #171717;
+      border: 1px solid #555;
+    }
+
+    .gesture-debug h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .gesture-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .gesture-card {
+      padding: 9px;
+      border: 1px solid #3b3b3b;
+      background: #242424;
+      border-left: 5px solid #666;
+    }
+
+    .gesture-card.active {
+      border-left-color: #00ff99;
+      background: #123326;
+    }
+
+    .gesture-card.fired {
+      border-left-color: #ffd966;
+      background: #3a3214;
+    }
+
+    .gesture-title {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .gesture-state {
+      color: #d6d6d6;
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    #lastCommandBanner {
+      margin-bottom: 10px;
+      padding: 8px;
+      background: #0f2430;
+      border: 1px solid #2d6f91;
+      color: #b7efff;
+      font-weight: bold;
+    }
+
+    .guide {
+      width: 620px;
+      margin-top: 10px;
+      padding: 10px;
+      background: #1f1f1f;
+      border: 1px solid #444;
+      line-height: 1.5;
+    }
+
+    pre {
+      width: 620px;
+      min-height: 260px;
+      margin-top: 15px;
+      padding: 10px;
+      background: #222;
+      border: 1px solid #444;
+      white-space: pre-wrap;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>AirNote 반듯한 밑줄 테스트</h2>
+
+  <div id="status">준비 중...</div>
+
+  <div class="controls">
+    <button id="retryButton" type="button" style="display:none;">다시 시작</button>
+    <button id="calibrateButton" type="button">캘리브레이션 시작</button>
+    <label>
+      <input type="radio" name="micHand" value="Right" checked />
+      마이크 손: 오른손
+    </label>
+    <label>
+      <input type="radio" name="micHand" value="Left" />
+      마이크 손: 왼손
+    </label>
+    <label>
+      <input id="reverseHandLabel" type="checkbox" />
+      좌우 반전 보정
+    </label>
+    <div id="handConfig"></div>
+    <div id="calibrationStatus">캘리브레이션: 기본값 사용</div>
+  </div>
+
+  <div class="camera-box">
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div class="gesture-debug">
+    <h3>웹캠 제스처 확인</h3>
+    <div id="lastCommandBanner">최근 실행 명령: 없음</div>
+    <div class="gesture-grid">
+      <div class="gesture-card" id="debugPointer">
+        <div class="gesture-title">검지 = 포인터</div>
+        <div class="gesture-state">대기 중</div>
+      </div>
+      <div class="gesture-card" id="debugMode">
+        <div class="gesture-title">새끼손가락 0.7초 = 제스처 제어 ON/OFF</div>
+        <div class="gesture-state">제어 ON</div>
+      </div>
+      <div class="gesture-card" id="debugPrev">
+        <div class="gesture-title">엄지 1초 유지 = 이전 페이지</div>
+        <div class="gesture-state">대기 중</div>
+      </div>
+      <div class="gesture-card" id="debugUnderline">
+        <div class="gesture-title">엄지+검지 터치 = 밑줄</div>
+        <div class="gesture-state">대기 중</div>
+      </div>
+      <div class="gesture-card" id="debugNext">
+        <div class="gesture-title">검지+중지 터치 후 스와이프 = 다음 페이지</div>
+        <div class="gesture-state">대기 중</div>
+      </div>
+      <div class="gesture-card" id="debugClear">
+        <div class="gesture-title">손바닥 1초 유지 = 현재 페이지 지우기</div>
+        <div class="gesture-state">대기 중</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="guide">
+    테스트 방법<br>
+    1. 페이지를 열면 자동으로 MediaPipe와 웹캠이 실행됩니다.<br>
+    2. 검지가 3프레임 연속 펴지면 실제 레이저처럼 크게 보이는 포인터가 켜진다.<br>
+    3. 검지가 3프레임 연속 접히면 포인터가 꺼진다.<br>
+    4. 마이크를 잡은 손을 선택하면, 반대 손만 포인터로 인식합니다.<br>
+    5. 실제 손 방향이 반대로 잡히면 좌우 반전 보정을 켜세요.<br>
+    6. 이 파일의 좌표는 PDF 좌표가 아니라 카메라 화면 기준 좌표입니다.<br>
+    7. 이 파일은 손 포인터 테스트 전용이며 PDF/STT/OCR 기능은 포함하지 않습니다.<br>
+    8. 제스처 명령: 새끼손가락 0.7초=제스처 제어 ON/OFF, 엄지 1초 유지=이전 페이지, 엄지+검지 터치=밑줄, 검지=포인터, 검지+중지 터치 후 좌우 스와이프=다음 페이지, 손바닥 1초 유지=현재 페이지 전체 지우기<br>
+    8-1. 반듯한 밑줄 버전: 3프레임 연속 인식 후 시작하며, 수집된 좌표를 시작점~끝점 기준의 곧은 밑줄로 보정 렌더링합니다.<br>
+    9. 외장 웹캠 사용 시 1280x720 이상을 우선 요청하며, 실제 시연 거리는 1.3~1.6m에서 먼저 테스트하세요.
+  </div>
+
+  <h3>실시간 상태</h3>
+  <pre id="output">아직 인식 안 됨</pre>
+
+  <script type="module">
+    import {
+      HandLandmarker,
+      FilesetResolver
+    } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+    const video = document.getElementById("webcam");
+    const canvas = document.getElementById("overlay");
+    const ctx = canvas.getContext("2d");
+    const cameraBox = document.querySelector(".camera-box");
+
+    const statusEl = document.getElementById("status");
+    const outputEl = document.getElementById("output");
+    const retryButton = document.getElementById("retryButton");
+    const calibrateButton = document.getElementById("calibrateButton");
+    const reverseHandLabelEl = document.getElementById("reverseHandLabel");
+    const handConfigEl = document.getElementById("handConfig");
+    const calibrationStatusEl = document.getElementById("calibrationStatus");
+    const lastCommandBannerEl = document.getElementById("lastCommandBanner");
+    const gestureDebugEls = {
+      pointer: document.getElementById("debugPointer"),
+      mode_toggle: document.getElementById("debugMode"),
+      previous_page: document.getElementById("debugPrev"),
+      underline: document.getElementById("debugUnderline"),
+      next_page: document.getElementById("debugNext"),
+      clear_page: document.getElementById("debugClear")
+    };
+
+    let handLandmarker = null;
+    let lastVideoTime = -1;
+    let webcamStream = null;
+    let isRunning = false;
+    let animationFrameId = null;
+    let handDelegateMode = "GPU";
+
+    // 외장 웹캠 기준: 실제 캡처는 720p 이상으로 요청하고,
+    // 제스처 좌표 계산은 화면에 표시되는 논리 캔버스 크기 기준으로 처리한다.
+    // 이렇게 하면 손가락 탐지는 더 선명한 영상으로 하고, 기존 제스처 임계값은 크게 흔들리지 않는다.
+    const CAMERA_CAPTURE_WIDTH = 1280;
+    const CAMERA_CAPTURE_HEIGHT = 720;
+    const CAMERA_DISPLAY_WIDTH = 960;
+
+    let smoothedX = null;
+    let smoothedY = null;
+
+    let micHandLabel = "Right";
+    let reverseHandLabel = false;
+
+    /*
+      검지 펴짐 기준
+
+      ANGLE_THRESHOLD:
+      - 높을수록 검지가 더 확실히 펴져야 함
+      - 너무 안 켜지면 130
+      - 반쯤 접어도 켜지면 145
+
+      DISTANCE_RATIO_PIP:
+      - 검지 끝이 PIP보다 손목에서 얼마나 더 멀어야 하는지
+      - 너무 안 켜지면 1.03
+      - 너무 쉽게 켜지면 1.12
+    */
+    const ANGLE_THRESHOLD = 135;
+    const DISTANCE_RATIO_PIP = 1.08;
+    const DISTANCE_RATIO_DIP = 1.02;
+
+    /*
+      3프레임 연속 판정
+      3이면 약 0.05~0.1초 정도라 깜빡임이 줄어듦.
+    */
+    const REQUIRED_ON_FRAMES = 3;
+    const REQUIRED_OFF_FRAMES = 3;
+    const REQUIRED_LOST_FRAMES = 8;
+    const REQUIRED_COMMAND_FRAMES = 3;
+    const UNDERLINE_LOST_GRACE_MS = 220;
+    const UNDERLINE_BRIDGE_MAX_DISTANCE = 180;
+    const UNDERLINE_BRIDGE_MIN_DISTANCE = 140;
+    const UNDERLINE_BRIDGE_MAX_LIMIT = 220;
+    const UNDERLINE_MIN_MOVE_DISTANCE = 2.0;
+    const UNDERLINE_POINT_SMOOTHING = 0.42;
+    const UNDERLINE_POINT_FAST_SMOOTHING = 0.70;
+    const UNDERLINE_POINT_FAST_DISTANCE = 60;
+    const UNDERLINE_STRAIGHTEN_ENABLED = true;
+    const UNDERLINE_STRAIGHTEN_MIN_POINTS = 2;
+    const UNDERLINE_STRAIGHTEN_SLOPE_DAMPING = 0.25;
+    const UNDERLINE_STRAIGHTEN_MAX_SLOPE = 0.06;
+    const UNDERLINE_STRAIGHTEN_EXTENSION_PX = 2;
+    const PREVIOUS_PAGE_HOLD_MS = 1000;
+    const MODE_TOGGLE_HOLD_MS = 700;
+    const MODE_TOGGLE_COOLDOWN_MS = 350;
+    const STRICT_COMMAND_ANGLE_OFFSET = 8;
+    const STRICT_COMMAND_DISTANCE_PIP_BONUS = 0.035;
+    const STRICT_COMMAND_DISTANCE_DIP_BONUS = 0.025;
+    const COMMAND_COOLDOWN_MS = 900;
+    const OPEN_PALM_HOLD_MS = 1000;
+    const TOUCH_DISTANCE_RATIO = 0.38;
+    const SWIPE_MIN_DISTANCE = 90;
+    const SWIPE_MAX_VERTICAL_DRIFT = 80;
+    const CALIBRATION_STORAGE_KEY = "gestureCalibrationProfile.v2";
+    const LEGACY_CALIBRATION_STORAGE_KEY = "gestureCalibrationProfile.v1";
+    const CALIBRATION_DURATION_MS = 2000;
+    const MIN_CALIBRATION_SAMPLES = 12;
+    const CALIBRATION_PHASES = ["open_palm", "pinch"];
+    const MIN_COMMAND_CONFIDENCE = 0.64;
+    const MIN_SENSITIVE_COMMAND_CONFIDENCE = 0.72;
+    const MIN_HAND_CONFIDENCE = 0.45;
+    const MIN_PALM_FACING_FOR_SENSITIVE = 0.24;
+    const MIN_STABILITY_FOR_CLEAR = 0.42;
+    const FAST_MOTION_DISTANCE = 120;
+    const DEFAULT_REFERENCE_PALM_SIZE_PX = 90;
+    const MIN_COMMAND_DISTANCE_SCALE = 0.3;
+    const MIN_POINTER_DISTANCE_SCALE = 0.18;
+    const MIN_ABSOLUTE_POINTER_PALM_SIZE_PX = 22;
+    const FAR_DISTANCE_ANGLE_PENALTY = 4;
+    const COMMAND_LABELS = {
+      mode_toggle: "제스처 제어 토글",
+      mode_on: "제스처 제어 ON",
+      mode_off: "제스처 제어 OFF",
+      disabled: "제스처 제어 OFF",
+      previous_page: "이전 페이지",
+      underline: "밑줄",
+      next_page: "다음 페이지",
+      clear_page: "현재 페이지 전체 지우기",
+      pointer_on: "포인터 켜짐",
+      pointer_off: "포인터 꺼짐",
+      none: "없음"
+    };
+
+    let indexExtendedCount = 0;
+    let indexFoldedCount = 0;
+    let lostHandFrames = 0;
+    let pointerActive = false;
+    let lastPointerEventActive = false;
+    let latestOutputText = "아직 인식 안 됨";
+    let lastOutputUpdateTime = 0;
+    let lastCommand = "none";
+    let lastCommandTime = 0;
+    let lastCommandLabel = "없음";
+    let thumbOnlyCount = 0;
+    let thumbOnlyStartTime = null;
+    let thumbOnlyLocked = false;
+    let underlinePinchCount = 0;
+    let underlinePinchLocked = false;
+    let underlineStrokeActive = false;
+    let underlineStrokeInGrace = false;
+    let underlineLastSeenAt = 0;
+    let underlineLastGoodPoint = null;
+    let underlineLastDrawnPoint = null;
+    let underlineSmoothX = null;
+    let underlineSmoothY = null;
+    let underlineStrokeId = 0;
+    let underlineStrokes = [];
+    let currentUnderlineStroke = null;
+    let lastUnderlineDebug = {
+      state: "idle",
+      gapMs: 0,
+      bridgeDistance: 0,
+      points: 0,
+      reason: "대기 중"
+    };
+    let openPalmCount = 0;
+    let openPalmStartTime = null;
+    let openPalmLocked = false;
+    let twoFingerSwipeStart = null;
+    let lastSwipeDebug = null;
+    let gestureControlEnabled = true;
+    let modeToggleStartTime = null;
+    let modeToggleLocked = false;
+    let lastModeToggleTime = 0;
+    let lastHandPoseContext = null;
+    let lastLaserPointer = null;
+    let zoneTracker = {
+      stableZone: "center",
+      candidateZone: "center",
+      candidateSince: 0,
+      history: [],
+      blend: 0
+    };
+    let calibrationProfile = loadCalibrationProfile();
+    let calibrationState = {
+      active: false,
+      startedAt: 0,
+      endsAt: 0,
+      phase: "idle",
+      phaseIndex: 0,
+      samples: {
+        open_palm: [],
+        pinch: []
+      }
+    };
+
+    // 실제 발표용 포인터처럼 보이도록 작은 떨림은 죽이고 큰 이동은 따라간다.
+    const JUMP_LIMIT = 260;
+    const POINTER_DEAD_ZONE = 2.5;
+    const POINTER_EDGE_PADDING = 8;
+    const LASER_POINTER_MEMORY_MS = 2000;
+    const ZONE_HISTORY_SIZE = 8;
+    const ZONE_STABLE_MS = 240;
+    const ZONE_BLEND_STEP = 0.18;
+
+    function getPointerTargetHandLabel() {
+      let target = micHandLabel === "Right" ? "Left" : "Right";
+
+      if (reverseHandLabel) {
+        target = target === "Right" ? "Left" : "Right";
+      }
+
+      return target;
+    }
+
+    function updateHandConfigText() {
+      handConfigEl.textContent =
+        `마이크 손: ${micHandLabel} | ` +
+        `포인터 인식 대상 손: ${getPointerTargetHandLabel()} | ` +
+        `좌우 반전 보정: ${reverseHandLabel ? "ON" : "OFF"}`;
+    }
+
+    function loadCalibrationProfile() {
+      try {
+        const raw = localStorage.getItem(CALIBRATION_STORAGE_KEY);
+        if (raw) {
+          return JSON.parse(raw);
+        }
+
+        const legacyRaw = localStorage.getItem(LEGACY_CALIBRATION_STORAGE_KEY);
+        if (!legacyRaw) {
+          return null;
+        }
+
+        const legacy = JSON.parse(legacyRaw);
+        return {
+          version: 2,
+          migratedFrom: "v1",
+          createdAt: legacy.createdAt || new Date().toISOString(),
+          sampleCount: legacy.sampleCount || 0,
+          palmSize: legacy.palmSize,
+          palmSizePx: legacy.palmSizePx,
+          fingerSpread: legacy.fingerSpread || 1,
+          touchDistanceRatio: legacy.touchDistanceRatio || TOUCH_DISTANCE_RATIO,
+          palmFacingScore: legacy.palmFacingScore || 0.5
+        };
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function saveCalibrationProfile(profile) {
+      calibrationProfile = profile;
+      try {
+        localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(profile));
+      } catch (error) {
+        // localStorage가 막힌 환경에서는 이번 세션 메모리 값만 사용한다.
+      }
+      updateCalibrationStatus();
+    }
+
+    function getCalibrationPhaseGuide(phase) {
+      if (phase === "open_palm") {
+        return {
+          title: "1/2 열린 손바닥 캘리브레이션",
+          pose: "포즈: 손바닥을 카메라 정면으로 펴고, 다섯 손가락이 모두 보이게 유지하세요.",
+          tip: "손을 화면 중앙에 두고 최대한 흔들지 마세요."
+        };
+      }
+
+      if (phase === "pinch") {
+        return {
+          title: "2/2 엄지+검지 터치 캘리브레이션",
+          pose: "포즈: 엄지 끝과 검지 끝을 붙이고 2초간 유지하세요.",
+          tip: "밑줄 제스처 기준을 잡는 단계입니다. 손을 너무 빠르게 움직이지 마세요."
+        };
+      }
+
+      return {
+        title: "캘리브레이션 대기",
+        pose: "캘리브레이션 시작 버튼을 누르면 1단계 손바닥, 2단계 엄지+검지 터치 순서로 진행됩니다.",
+        tip: "각 단계는 최소 12개 유효 샘플이 필요합니다."
+      };
+    }
+
+    function buildCalibrationCountText() {
+      const openPalmCount = calibrationState.samples.open_palm?.length || 0;
+      const pinchCount = calibrationState.samples.pinch?.length || 0;
+      return `손바닥 샘플: ${openPalmCount} / ${MIN_CALIBRATION_SAMPLES}개 | 터치 샘플: ${pinchCount} / ${MIN_CALIBRATION_SAMPLES}개`;
+    }
+
+    function updateCalibrationStatus(extra = "") {
+      if (calibrationState.active) {
+        const remainingMs = Math.max(0, calibrationState.endsAt - performance.now());
+        const guide = getCalibrationPhaseGuide(calibrationState.phase);
+        calibrationStatusEl.innerHTML =
+          `<div class="cal-title">캘리브레이션 진행 중 · ${guide.title}</div>` +
+          `<div class="cal-pose">${guide.pose}</div>` +
+          `<div>${guide.tip}</div>` +
+          `<div class="cal-counts">${buildCalibrationCountText()}</div>` +
+          `<div>남은 시간: ${Math.ceil(remainingMs / 1000)}초</div>`;
+        return;
+      }
+
+      if (!calibrationProfile) {
+        const guide = getCalibrationPhaseGuide("idle");
+        calibrationStatusEl.innerHTML =
+          `<div class="cal-title">캘리브레이션: 기본값 사용</div>` +
+          `<div class="cal-pose">${guide.pose}</div>` +
+          `<div>${guide.tip}</div>` +
+          (extra ? `<div class="cal-warn">${extra}</div>` : "");
+        return;
+      }
+
+      const palmSizePx = Number(calibrationProfile.palmSizePx || 0);
+      const fingerSpread = Number(calibrationProfile.fingerSpread || 0);
+      const touchDistanceRatio = Number(calibrationProfile.touchDistanceRatio || TOUCH_DISTANCE_RATIO);
+      const palmFacingScore = Number(calibrationProfile.palmFacingScore || 0);
+      const openPalmSampleCount = calibrationProfile.openPalmSampleCount ?? "N/A";
+      const pinchSampleCount = calibrationProfile.pinchSampleCount ?? "N/A";
+
+      calibrationStatusEl.innerHTML =
+        `<div class="cal-success">캘리브레이션: 적용됨</div>` +
+        `<div class="cal-counts">손바닥 샘플: ${openPalmSampleCount}개 | 터치 샘플: ${pinchSampleCount}개</div>` +
+        `<div>손 크기: ${palmSizePx.toFixed(1)}px | 벌림: ${fingerSpread.toFixed(2)} | 터치 기준: ${touchDistanceRatio.toFixed(2)} | 정면성: ${palmFacingScore.toFixed(2)}</div>` +
+        `<div>다시 보정하려면 [캘리브레이션 시작] 버튼을 누르세요.</div>` +
+        (extra ? `<div class="cal-warn">${extra}</div>` : "");
+    }
+
+    function startCalibration() {
+      const now = performance.now();
+      calibrationState = {
+        active: true,
+        startedAt: now,
+        endsAt: now + CALIBRATION_DURATION_MS,
+        phase: CALIBRATION_PHASES[0],
+        phaseIndex: 0,
+        samples: {
+          open_palm: [],
+          pinch: []
+        }
+      };
+      calibrateButton.disabled = true;
+      updateCalibrationStatus();
+    }
+
+    function collectCalibrationSample(hand, context, rawGesture) {
+      if (!calibrationState.active) {
+        return;
+      }
+
+      const phase = calibrationState.phase;
+      const touchDistanceRatio =
+        rawGesture.thumbIndexDistance / Math.max(context.palmSize, 0.001);
+      const sample = {
+        palmSize: context.palmSize,
+        palmSizePx: context.palmSizePx,
+        fingerSpread: context.fingerSpread,
+        touchDistanceRatio,
+        palmFacingScore: context.palmFacingScore,
+        stabilityScore: context.stabilityScore,
+        indexExtended: rawGesture.index,
+        openPalm: rawGesture.rawOpenPalm,
+        touch: rawGesture.thumbIndexTouch
+      };
+
+      if (
+        phase === "open_palm" &&
+        rawGesture.rawOpenPalm &&
+        context.stabilityScore >= 0.25
+      ) {
+        calibrationState.samples.open_palm.push(sample);
+      }
+
+      if (
+        phase === "pinch" &&
+        touchDistanceRatio > 0.05 &&
+        touchDistanceRatio < 0.8
+      ) {
+        calibrationState.samples.pinch.push(sample);
+      }
+
+      updateCalibrationStatus();
+    }
+
+    function finishCalibrationIfNeeded(now) {
+      if (!calibrationState.active || now < calibrationState.endsAt) {
+        return;
+      }
+
+      const phase = calibrationState.phase;
+      const samples = calibrationState.samples[phase] || [];
+
+      if (
+        samples.length >= MIN_CALIBRATION_SAMPLES &&
+        calibrationState.phaseIndex < CALIBRATION_PHASES.length - 1
+      ) {
+        calibrationState.phaseIndex++;
+        calibrationState.phase = CALIBRATION_PHASES[calibrationState.phaseIndex];
+        calibrationState.startedAt = now;
+        calibrationState.endsAt = now + CALIBRATION_DURATION_MS;
+        updateCalibrationStatus();
+        return;
+      }
+
+      calibrationState.active = false;
+      calibrateButton.disabled = false;
+
+      const openPalmSamples = calibrationState.samples.open_palm;
+      const pinchSamples = calibrationState.samples.pinch;
+
+      if (
+        openPalmSamples.length < MIN_CALIBRATION_SAMPLES ||
+        pinchSamples.length < MIN_CALIBRATION_SAMPLES
+      ) {
+        const fallbackMessage = calibrationProfile
+          ? `샘플 부족: 손바닥 ${openPalmSamples.length}, 터치 ${pinchSamples.length}. 기존값 유지`
+          : `샘플 부족: 손바닥 ${openPalmSamples.length}, 터치 ${pinchSamples.length}. 기본값 유지`;
+        updateCalibrationStatus(
+          `${fallbackMessage} | 다시 시도해 주세요`
+        );
+        return;
+      }
+
+      const stableOpenPalmSamples = openPalmSamples.filter(
+        (sample) => sample.stabilityScore >= 0.35
+      );
+      const sourceOpenPalmSamples =
+        stableOpenPalmSamples.length >= MIN_CALIBRATION_SAMPLES
+          ? stableOpenPalmSamples
+          : openPalmSamples;
+      const touchRatios = pinchSamples
+        .map((sample) => sample.touchDistanceRatio)
+        .filter((ratio) => ratio > 0.05 && ratio < 0.8)
+        .sort((a, b) => a - b);
+      const touchBaseline =
+        touchRatios.length > 0
+          ? touchRatios[Math.floor(touchRatios.length * 0.65)]
+          : TOUCH_DISTANCE_RATIO;
+      const profile = {
+        version: 2,
+        createdAt: new Date().toISOString(),
+        sampleCount: sourceOpenPalmSamples.length + pinchSamples.length,
+        openPalmSampleCount: sourceOpenPalmSamples.length,
+        pinchSampleCount: pinchSamples.length,
+        palmSize: average(sourceOpenPalmSamples.map((sample) => sample.palmSize)),
+        palmSizePx: average(sourceOpenPalmSamples.map((sample) => sample.palmSizePx)),
+        fingerSpread: average(sourceOpenPalmSamples.map((sample) => sample.fingerSpread)),
+        touchDistanceRatio: clamp(touchBaseline * 1.18, 0.22, 0.5),
+        palmFacingScore: average(
+          sourceOpenPalmSamples.map((sample) => sample.palmFacingScore)
+        )
+      };
+
+      saveCalibrationProfile(profile);
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function scoreThreshold(value, min, good) {
+      if (value <= min) {
+        return 0;
+      }
+      if (value >= good) {
+        return 1;
+      }
+      return (value - min) / (good - min);
+    }
+
+    function average(values) {
+      if (!values.length) {
+        return 0;
+      }
+      return values.reduce((sum, value) => sum + value, 0) / values.length;
+    }
+
+    function getVector(a, b) {
+      return {
+        x: b.x - a.x,
+        y: b.y - a.y,
+        z: (b.z || 0) - (a.z || 0)
+      };
+    }
+
+    function getCrossProduct(a, b) {
+      return {
+        x: a.y * b.z - a.z * b.y,
+        y: a.z * b.x - a.x * b.z,
+        z: a.x * b.y - a.y * b.x
+      };
+    }
+
+    function getVectorLength(vector) {
+      return Math.sqrt(
+        vector.x * vector.x + vector.y * vector.y + vector.z * vector.z
+      );
+    }
+
+    function setOutput(text, force = false) {
+      latestOutputText = text;
+
+      const now = performance.now();
+      if (force || now - lastOutputUpdateTime >= 200) {
+        outputEl.textContent = latestOutputText;
+        lastOutputUpdateTime = now;
+      }
+    }
+
+    function setGestureCard(card, isActive, detail, isFired = false) {
+      if (!card) {
+        return;
+      }
+
+      card.classList.toggle("active", Boolean(isActive));
+      card.classList.toggle("fired", Boolean(isFired));
+      const stateEl = card.querySelector(".gesture-state");
+      if (stateEl) {
+        stateEl.textContent = detail;
+      }
+    }
+
+    function getCommandLabel(command) {
+      return COMMAND_LABELS[command] || command;
+    }
+
+    function updateLastCommandBanner(command, now) {
+      lastCommandLabel = getCommandLabel(command);
+      if (command === "none" || lastCommandTime === 0) {
+        lastCommandBannerEl.textContent = `최근 실행 명령: ${lastCommandLabel}`;
+        return;
+      }
+
+      const elapsedMs = Math.max(0, Math.round(now - lastCommandTime));
+      lastCommandBannerEl.textContent =
+        `최근 실행 명령: ${lastCommandLabel} (${elapsedMs}ms 전)`;
+    }
+
+    function resetGestureDebug(reason = "대기 중") {
+      setGestureCard(gestureDebugEls.pointer, false, reason);
+      setGestureCard(
+        gestureDebugEls.mode_toggle,
+        false,
+        `제어 ${gestureControlEnabled ? "ON" : "OFF"}`
+      );
+      setGestureCard(gestureDebugEls.previous_page, false, reason);
+      setGestureCard(gestureDebugEls.underline, false, reason);
+      setGestureCard(gestureDebugEls.next_page, false, reason);
+      setGestureCard(gestureDebugEls.clear_page, false, reason);
+    }
+
+    function updateGestureDebug(gesture, pointerState, now) {
+      const openPalmHoldMs =
+        openPalmStartTime === null ? 0 : Math.round(now - openPalmStartTime);
+      const confidenceText = `최종 ${getCommandLabel(gesture.exclusiveMode)} | 신뢰도 ${gesture.confidence?.toFixed(2) ?? "N/A"}`;
+      const blockedText = gesture.blockedReason
+        ? ` | 보류: ${gesture.blockedReason}`
+        : "";
+      const contextText = gesture.context
+        ? ` | zone ${gesture.context.screenZone}, angle ${gesture.thresholds?.angleThreshold?.toFixed(1) ?? "N/A"}, partial ${gesture.context.partialHandThreshold?.toFixed(2) ?? "N/A"}, touch ${gesture.thresholds?.touchDistanceRatio?.toFixed(2) ?? "N/A"}, 거리 ${gesture.context.distanceScale.toFixed(2)}, 손 ${gesture.context.palmSizePx.toFixed(1)}px, 안정 ${gesture.context.stabilityScore.toFixed(2)}`
+        : "";
+      const modeHoldMs =
+        modeToggleStartTime === null ? 0 : Math.round(now - modeToggleStartTime);
+      const thumbOnlyHoldMs =
+        thumbOnlyStartTime === null ? 0 : Math.round(now - thumbOnlyStartTime);
+      const laserReady =
+        lastLaserPointer && now - lastLaserPointer.time <= LASER_POINTER_MEMORY_MS;
+      const laserText = laserReady
+        ? `밑줄 시작점 준비 ${Math.round(now - lastLaserPointer.time)}ms`
+        : "밑줄 시작점 없음";
+
+      setGestureCard(
+        gestureDebugEls.mode_toggle,
+        gesture.modeToggle,
+        `제어 ${gestureControlEnabled ? "ON" : "OFF"} | 새끼 단독: ${gesture.rawPinkyOnly ? "YES" : "NO"} | 유지 ${modeHoldMs} / ${MODE_TOGGLE_HOLD_MS}ms | 쿨다운 ${Math.max(0, Math.round(MODE_TOGGLE_COOLDOWN_MS - (now - lastModeToggleTime)))}ms`,
+        lastCommand === "mode_on" || lastCommand === "mode_off"
+      );
+
+      setGestureCard(
+        gestureDebugEls.pointer,
+        gestureControlEnabled && pointerState.pointerActive && !gesture.blocksPointer,
+        !gestureControlEnabled
+          ? `제어 OFF: 새끼손가락 0.7초로 켜기`
+          : gesture.blocksPointer
+          ? `일시 정지: ${getCommandLabel(gesture.exclusiveMode)} 제스처 우선`
+          : gesture.candidates?.pointer?.blockedBy
+          ? `보류: ${gesture.candidates.pointer.blockedBy}${contextText}`
+          : pointerState.pointerActive
+          ? `ON: 검지 인식 ${pointerState.indexExtendedCount}프레임 | ${laserText}${contextText}`
+          : `OFF: 검지 인식 ${pointerState.indexExtendedCount} / ${REQUIRED_ON_FRAMES}프레임 | ${laserText} | pointerBlocked: ${gesture.candidates?.pointer?.blockedBy || "없음"}${contextText}`
+      );
+      setGestureCard(
+        gestureDebugEls.previous_page,
+        gesture.thumbOnly,
+        `${confidenceText}${blockedText} | 원본 엄지 단독: ${gesture.rawThumbOnly ? "YES" : "NO"} | 유지 ${thumbOnlyHoldMs} / ${PREVIOUS_PAGE_HOLD_MS}ms | 프레임 ${thumbOnlyCount} | 실행잠금 ${thumbOnlyLocked ? "LOCKED" : "READY"} | 엄지점수 ${gesture.thumbScore?.toFixed(2) ?? "N/A"} | 엄지UP ${gesture.thumbUpScore?.toFixed(2) ?? "N/A"}/${gesture.thumbUpIntent ? "YES" : "NO"} | 엄지의도 ${gesture.thumbGestureIntent ? "YES" : "NO"} | 주먹가드 ${gesture.closedFistLike ? "ON" : "OFF"} | previousBlocked: ${gesture.candidates?.previous_page?.blockedBy || "없음"} | 다른손가락 최대 ${gesture.maxNonThumbScore?.toFixed(2) ?? "N/A"} | 열린손가락 ${gesture.nonThumbOpenCount ?? "N/A"}/4${contextText}`,
+        lastCommand === "previous_page" && now - lastCommandTime < COMMAND_COOLDOWN_MS
+      );
+      setGestureCard(
+        gestureDebugEls.underline,
+        gesture.underlinePinch,
+        `${confidenceText}${blockedText} | 원본 터치: ${gesture.rawUnderlinePinch ? "YES" : "NO"} (${underlinePinchCount} / ${REQUIRED_COMMAND_FRAMES}) | stroke ${lastUnderlineDebug.state} | gap ${lastUnderlineDebug.gapMs}ms | bridge ${Math.round(lastUnderlineDebug.bridgeDistance || 0)}px / max ${Math.round(getUnderlineBridgeMaxDistance())}px | points ${lastUnderlineDebug.points || 0} | score ${gesture.candidates?.underline?.score?.toFixed(2) ?? "N/A"}${contextText}`,
+        lastCommand === "underline" && now - lastCommandTime < COMMAND_COOLDOWN_MS
+      );
+      setGestureCard(
+        gestureDebugEls.next_page,
+        gesture.twoFingerSwipeReady,
+        lastSwipeDebug
+          ? `${confidenceText}${blockedText} | start ${lastSwipeDebug.startX.toFixed(1)},${lastSwipeDebug.startY.toFixed(1)} -> now ${lastSwipeDebug.currentX.toFixed(1)},${lastSwipeDebug.currentY.toFixed(1)} | deltaX ${lastSwipeDebug.deltaX.toFixed(1)}px, deltaY ${lastSwipeDebug.deltaY.toFixed(1)}px`
+          : `${confidenceText}${blockedText} | 원본 검지+중지: ${gesture.rawTwoFingerSwipeReady ? "YES" : "NO"} | indexMiddleTouch ${gesture.indexMiddleTouch ? "YES" : "NO"} | intentionalTouch ${gesture.intentionalIndexMiddleTouch ? "YES" : "NO"} | score ${gesture.candidates?.next_page?.score?.toFixed(2) ?? "N/A"} | 검지 ${gesture.indexScore?.toFixed(2) ?? "N/A"}, 중지 ${gesture.middleScore?.toFixed(2) ?? "N/A"} | 이동 대기`,
+        lastCommand === "next_page" && now - lastCommandTime < COMMAND_COOLDOWN_MS
+      );
+      setGestureCard(
+        gestureDebugEls.clear_page,
+        gesture.openPalm,
+        `${confidenceText}${blockedText} | 원본 손바닥: ${gesture.rawOpenPalm ? "YES" : "NO"} (${openPalmHoldMs} / ${OPEN_PALM_HOLD_MS}ms)${contextText}`,
+        lastCommand === "clear_page" && now - lastCommandTime < COMMAND_COOLDOWN_MS
+      );
+      updateLastCommandBanner(lastCommand, now);
+    }
+
+    function dispatchPointerUpdate(detail) {
+      window.dispatchEvent(
+        new CustomEvent("pointer-update", {
+          detail
+        })
+      );
+    }
+
+    function dispatchGestureCommand(detail) {
+      window.dispatchEvent(
+        new CustomEvent("gesture-command", {
+          detail
+        })
+      );
+    }
+
+    function dispatchPointerOff(reason) {
+      if (!lastPointerEventActive) {
+        return;
+      }
+
+      lastPointerEventActive = false;
+      lastCommand = "pointer_off";
+      lastCommandTime = performance.now();
+      updateLastCommandBanner(lastCommand, lastCommandTime);
+      dispatchGestureCommand({
+        command: "pointer_off",
+        active: false,
+        source: "index_finger_extended",
+        reason
+      });
+      dispatchPointerUpdate({
+        active: false,
+        reason,
+        micHandLabel,
+        targetHandLabel: getPointerTargetHandLabel()
+      });
+    }
+
+    async function createHandLandmarker(vision, delegate) {
+      return HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate
+        },
+        runningMode: "VIDEO",
+        numHands: 2,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+    }
+
+    async function initMediaPipe() {
+      statusEl.textContent = "MediaPipe Hand 로딩 중...";
+
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+      );
+
+      try {
+        handDelegateMode = "GPU";
+        handLandmarker = await createHandLandmarker(vision, "GPU");
+      } catch (gpuError) {
+        statusEl.textContent =
+          `GPU delegate 로딩 실패: ${gpuError.message || gpuError}. CPU로 재시도 중...`;
+
+        try {
+          handDelegateMode = "CPU";
+          handLandmarker = await createHandLandmarker(vision, "CPU");
+        } catch (cpuError) {
+          throw new Error(
+            `GPU delegate 실패 원인: ${gpuError.message || gpuError}\n` +
+            `CPU delegate 재시도도 실패했습니다: ${cpuError.message || cpuError}`
+          );
+        }
+      }
+
+      statusEl.textContent = `MediaPipe Hand 로드 완료 (${handDelegateMode})`;
+    }
+
+    async function initWebcam() {
+      statusEl.textContent = "웹캠 연결 중...";
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: CAMERA_CAPTURE_WIDTH },
+          height: { ideal: CAMERA_CAPTURE_HEIGHT },
+          aspectRatio: { ideal: 16 / 9 },
+          frameRate: { ideal: 30, max: 30 }
+        },
+        audio: false
+      });
+
+      webcamStream = stream;
+      video.srcObject = stream;
+
+      return new Promise((resolve) => {
+        video.onloadeddata = () => {
+          const actualWidth = video.videoWidth || CAMERA_CAPTURE_WIDTH;
+          const actualHeight = video.videoHeight || CAMERA_CAPTURE_HEIGHT;
+          const aspectRatio = actualWidth / Math.max(actualHeight, 1);
+          const displayWidth = CAMERA_DISPLAY_WIDTH;
+          const displayHeight = Math.round(displayWidth / Math.max(aspectRatio, 0.1));
+
+          canvas.width = displayWidth;
+          canvas.height = displayHeight;
+          cameraBox.style.width = `${displayWidth}px`;
+          cameraBox.style.height = `${displayHeight}px`;
+
+          statusEl.textContent =
+            `웹캠 연결 완료 (${actualWidth}x${actualHeight}, 표시 ${displayWidth}x${displayHeight})`;
+          resolve();
+        };
+      });
+    }
+
+    function clearCanvas() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function getPointDistance(a, b) {
+      if (!a || !b) return Infinity;
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function getUnderlineBridgeMaxDistance() {
+      const width = canvas?.width || CAMERA_DISPLAY_WIDTH || 960;
+      const height = canvas?.height || 540;
+      const longSide = Math.max(width, height);
+      const dynamicDistance = longSide * 0.19;
+      return Math.max(
+        UNDERLINE_BRIDGE_MIN_DISTANCE,
+        Math.min(UNDERLINE_BRIDGE_MAX_LIMIT, dynamicDistance || UNDERLINE_BRIDGE_MAX_DISTANCE)
+      );
+    }
+
+    function clampValue(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function getMedianValue(values) {
+      if (!values.length) return 0;
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 0
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid];
+    }
+
+    function getStraightenedUnderlineLine(points) {
+      if (!points?.length) return null;
+
+      if (!UNDERLINE_STRAIGHTEN_ENABLED || points.length < UNDERLINE_STRAIGHTEN_MIN_POINTS) {
+        const p = points[0];
+        return {
+          start: { x: p.x, y: p.y },
+          end: { x: p.x + 0.01, y: p.y + 0.01 },
+          mode: "raw"
+        };
+      }
+
+      const first = points[0];
+      const last = points[points.length - 1];
+      const xs = points.map((p) => p.x);
+      const ys = points.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const xRange = Math.max(maxX - minX, 1);
+      const centerX = xs.reduce((sum, x) => sum + x, 0) / xs.length;
+      const centerY = getMedianValue(ys);
+
+      let numerator = 0;
+      let denominator = 0;
+      for (const point of points) {
+        const dx = point.x - centerX;
+        numerator += dx * (point.y - centerY);
+        denominator += dx * dx;
+      }
+
+      const rawSlope = denominator > 1 ? numerator / denominator : 0;
+      const correctedSlope = clampValue(
+        rawSlope * UNDERLINE_STRAIGHTEN_SLOPE_DAMPING,
+        -UNDERLINE_STRAIGHTEN_MAX_SLOPE,
+        UNDERLINE_STRAIGHTEN_MAX_SLOPE
+      );
+
+      const direction = last.x >= first.x ? 1 : -1;
+      let startX = first.x - UNDERLINE_STRAIGHTEN_EXTENSION_PX * direction;
+      let endX = last.x + UNDERLINE_STRAIGHTEN_EXTENSION_PX * direction;
+
+      // 손이 살짝 뒤로 흔들려도 밑줄 길이가 접혀 보이지 않도록 x 범위를 보정한다.
+      if (Math.abs(endX - startX) < xRange * 0.55) {
+        startX = direction > 0 ? minX : maxX;
+        endX = direction > 0 ? maxX : minX;
+      }
+
+      const getY = (x) => centerY + correctedSlope * (x - centerX);
+
+      return {
+        start: { x: startX, y: getY(startX) },
+        end: { x: endX, y: getY(endX) },
+        mode: "straightened",
+        rawSlope,
+        correctedSlope
+      };
+    }
+
+    function drawUnderlineStrokes() {
+      if (!underlineStrokes.length) return;
+
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      underlineStrokes.forEach((stroke) => {
+        if (!stroke.points.length) return;
+
+        const style = stroke.style || {};
+        ctx.strokeStyle = style.color || "#e11d48";
+        ctx.globalAlpha = style.opacity ?? 0.95;
+        ctx.lineWidth = style.width || 4;
+
+        const straightLine = getStraightenedUnderlineLine(stroke.points);
+        if (!straightLine) return;
+
+        ctx.beginPath();
+        ctx.moveTo(straightLine.start.x, straightLine.start.y);
+        ctx.lineTo(straightLine.end.x, straightLine.end.y);
+        ctx.stroke();
+      });
+
+      ctx.restore();
+    }
+
+    function redrawOverlay() {
+      clearCanvas();
+      drawUnderlineStrokes();
+    }
+
+    function clearUnderlineStrokes(reason = "manual_clear") {
+      underlineStrokes = [];
+      currentUnderlineStroke = null;
+      underlineStrokeActive = false;
+      underlineStrokeInGrace = false;
+      underlineLastGoodPoint = null;
+      underlineLastDrawnPoint = null;
+      underlinePinchCount = 0;
+      underlinePinchLocked = false;
+      resetUnderlineSmoothing();
+      lastUnderlineDebug = {
+        state: "cleared",
+        gapMs: 0,
+        bridgeDistance: 0,
+        points: 0,
+        reason
+      };
+      clearCanvas();
+    }
+
+    function resetSmoothing() {
+      smoothedX = null;
+      smoothedY = null;
+      lastHandPoseContext = null;
+      zoneTracker = {
+        stableZone: "center",
+        candidateZone: "center",
+        candidateSince: 0,
+        history: [],
+        blend: 0
+      };
+    }
+
+    function resetGestureState() {
+      indexExtendedCount = 0;
+      indexFoldedCount = 0;
+      lostHandFrames = 0;
+      pointerActive = false;
+      resetCommandState();
+    }
+
+    function getDistance2D(x1, y1, x2, y2) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function getDistance3D(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const dz = (a.z || 0) - (b.z || 0);
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    function getFingerSpread(hand, palmSize) {
+      const indexTip = hand[8];
+      const middleTip = hand[12];
+      const ringTip = hand[16];
+      const pinkyTip = hand[20];
+      const spread =
+        getDistance3D(indexTip, middleTip) +
+        getDistance3D(middleTip, ringTip) +
+        getDistance3D(ringTip, pinkyTip);
+      return spread / Math.max(palmSize, 0.001);
+    }
+
+    function detectScreenZone(point) {
+      const x = point.x;
+      const y = point.y;
+      const horizontal = x < 0.33 ? "left" : x > 0.67 ? "right" : "center";
+      const vertical = y < 0.33 ? "top" : y > 0.67 ? "bottom" : "middle";
+
+      if (vertical === "middle" && horizontal === "center") return "center";
+      if (vertical === "middle") return horizontal;
+      if (horizontal === "center") return vertical;
+      return `${vertical}_${horizontal}`;
+    }
+
+    function getZoneLevel(zone) {
+      if (zone === "center") return "center";
+      return zone.includes("_") ? "corner" : "edge";
+    }
+
+    function getZoneModifier(zone, blend = 1) {
+      const level = getZoneLevel(zone);
+      const base =
+        level === "corner"
+          ? {
+              angleRelax: 5,
+              partialHandThreshold: 0.76,
+              sensitiveConfidenceBoost: 0.06,
+              pointerDistanceScaleBonus: -0.04,
+              stabilityRelax: 0.1,
+              smoothingBoost: 0.08
+            }
+          : level === "edge"
+          ? {
+              angleRelax: 3,
+              partialHandThreshold: 0.82,
+              sensitiveConfidenceBoost: 0.04,
+              pointerDistanceScaleBonus: -0.025,
+              stabilityRelax: 0.06,
+              smoothingBoost: 0.04
+            }
+          : {
+              angleRelax: 0,
+              partialHandThreshold: 0.86,
+              sensitiveConfidenceBoost: 0,
+              pointerDistanceScaleBonus: 0,
+              stabilityRelax: 0,
+              smoothingBoost: 0
+            };
+
+      return {
+        level,
+        angleRelax: base.angleRelax * blend,
+        partialHandThreshold:
+          0.86 + (base.partialHandThreshold - 0.86) * blend,
+        sensitiveConfidenceBoost: base.sensitiveConfidenceBoost * blend,
+        pointerDistanceScaleBonus: base.pointerDistanceScaleBonus * blend,
+        stabilityRelax: base.stabilityRelax * blend,
+        smoothingBoost: base.smoothingBoost * blend
+      };
+    }
+
+    function updateScreenZone(palmCenter, now) {
+      zoneTracker.history.push({ x: palmCenter.x, y: palmCenter.y });
+      if (zoneTracker.history.length > ZONE_HISTORY_SIZE) {
+        zoneTracker.history.shift();
+      }
+
+      const averagePoint = {
+        x: average(zoneTracker.history.map((point) => point.x)),
+        y: average(zoneTracker.history.map((point) => point.y))
+      };
+      const detectedZone = detectScreenZone(averagePoint);
+
+      if (detectedZone !== zoneTracker.candidateZone) {
+        zoneTracker.candidateZone = detectedZone;
+        zoneTracker.candidateSince = now;
+      }
+
+      const stableLongEnough =
+        now - zoneTracker.candidateSince >= ZONE_STABLE_MS;
+      if (stableLongEnough && zoneTracker.stableZone !== detectedZone) {
+        zoneTracker.stableZone = detectedZone;
+        zoneTracker.blend = 0;
+      }
+
+      zoneTracker.blend = clamp(zoneTracker.blend + ZONE_BLEND_STEP, 0, 1);
+      const modifier = getZoneModifier(zoneTracker.stableZone, zoneTracker.blend);
+
+      return {
+        rawZone: detectScreenZone(palmCenter),
+        candidateZone: detectedZone,
+        stableZone: zoneTracker.stableZone,
+        averagePoint,
+        blend: zoneTracker.blend,
+        ...modifier
+      };
+    }
+
+    function getHandPoseContext(hand, handInfo = null, rawPointer = null, now = performance.now()) {
+      const wrist = hand[0];
+      const indexMCP = hand[5];
+      const middleMCP = hand[9];
+      const ringMCP = hand[13];
+      const pinkyMCP = hand[17];
+      const palmCenter = {
+        x: (wrist.x + indexMCP.x + middleMCP.x + ringMCP.x + pinkyMCP.x) / 5,
+        y: (wrist.y + indexMCP.y + middleMCP.y + ringMCP.y + pinkyMCP.y) / 5,
+        z:
+          ((wrist.z || 0) +
+            (indexMCP.z || 0) +
+            (middleMCP.z || 0) +
+            (ringMCP.z || 0) +
+            (pinkyMCP.z || 0)) /
+          5
+      };
+      const palmSize = Math.max(getDistance3D(wrist, middleMCP), 0.001);
+      const fingerSpread = getFingerSpread(hand, palmSize);
+      const palmSizePx = getDistance2D(
+        wrist.x * canvas.width,
+        wrist.y * canvas.height,
+        middleMCP.x * canvas.width,
+        middleMCP.y * canvas.height
+      );
+      const palmNormal = getCrossProduct(
+        getVector(wrist, indexMCP),
+        getVector(wrist, pinkyMCP)
+      );
+      const normalLength = Math.max(getVectorLength(palmNormal), 0.001);
+      const normalizedNormal = {
+        x: palmNormal.x / normalLength,
+        y: palmNormal.y / normalLength,
+        z: palmNormal.z / normalLength
+      };
+      const zValues = hand.map((point) => point.z || 0);
+      const depthSpread =
+        Math.max(...zValues) - Math.min(...zValues);
+      const depthPenalty = clamp(depthSpread / (palmSize * 1.8), 0, 1);
+      const palmFacingScore = clamp(
+        Math.abs(normalizedNormal.z) * 0.72 + (1 - depthPenalty) * 0.28,
+        0,
+        1
+      );
+      const handRotation =
+        Math.atan2(indexMCP.y - pinkyMCP.y, indexMCP.x - pinkyMCP.x) *
+        (180 / Math.PI);
+      const screenPalmCenter = normalizedToScreen(palmCenter);
+      const pointerPoint = rawPointer || normalizedToScreen(hand[8]);
+      const lastContext = lastHandPoseContext;
+      const palmMove = lastContext
+        ? getDistance2D(
+            lastContext.screenPalmCenter.x,
+            lastContext.screenPalmCenter.y,
+            screenPalmCenter.x,
+            screenPalmCenter.y
+          )
+        : 0;
+      const pointerMove = lastContext
+        ? getDistance2D(
+            lastContext.pointerPoint.x,
+            lastContext.pointerPoint.y,
+            pointerPoint.x,
+            pointerPoint.y
+          )
+        : 0;
+      const stabilityScore = clamp(1 - palmMove / 95, 0, 1);
+      const inFrameRatio =
+        hand.filter(
+          (point) =>
+            point.x >= 0.02 &&
+            point.x <= 0.98 &&
+            point.y >= 0.02 &&
+            point.y <= 0.98
+        ).length / hand.length;
+      const zoneInfo = updateScreenZone(palmCenter, now);
+      const confidence = handInfo?.score || 0;
+      const lowConfidence = confidence > 0 && confidence < MIN_HAND_CONFIDENCE;
+      const partialHand = inFrameRatio < zoneInfo.partialHandThreshold;
+      const minPalmFacingScore = calibrationProfile?.palmFacingScore
+        ? clamp(calibrationProfile.palmFacingScore * 0.55, 0.12, MIN_PALM_FACING_FOR_SENSITIVE)
+        : MIN_PALM_FACING_FOR_SENSITIVE;
+      const angleUnstable = palmFacingScore < minPalmFacingScore;
+      const referencePalmSizePx =
+        calibrationProfile?.palmSizePx || DEFAULT_REFERENCE_PALM_SIZE_PX;
+      const distanceScale = clamp(
+        palmSizePx / Math.max(referencePalmSizePx, 1),
+        0,
+        2
+      );
+      const tooFarForCommands =
+        distanceScale < MIN_COMMAND_DISTANCE_SCALE ||
+        palmSizePx < MIN_ABSOLUTE_POINTER_PALM_SIZE_PX + 8;
+      const tooFarForPointer =
+        distanceScale < Math.max(0.08, MIN_POINTER_DISTANCE_SCALE + zoneInfo.pointerDistanceScaleBonus) ||
+        palmSizePx < MIN_ABSOLUTE_POINTER_PALM_SIZE_PX;
+
+      const context = {
+        palmCenter,
+        screenPalmCenter,
+        pointerPoint,
+        palmSize,
+        palmSizePx,
+        fingerSpread,
+        palmNormal: normalizedNormal,
+        palmFacingScore,
+        handRotation,
+        depthSpread,
+        stabilityScore,
+        inFrameRatio,
+        screenZone: zoneInfo.stableZone,
+        rawScreenZone: zoneInfo.rawZone,
+        candidateScreenZone: zoneInfo.candidateZone,
+        zoneLevel: zoneInfo.level,
+        zoneBlend: zoneInfo.blend,
+        zoneModifier: zoneInfo,
+        partialHandThreshold: zoneInfo.partialHandThreshold,
+        minPalmFacingScore,
+        confidence,
+        lowConfidence,
+        partialHand,
+        angleUnstable,
+        referencePalmSizePx,
+        distanceScale,
+        tooFarForCommands,
+        tooFarForPointer,
+        fastMotion: pointerMove > FAST_MOTION_DISTANCE,
+        palmMove,
+        pointerMove,
+        timestamp: now
+      };
+
+      lastHandPoseContext = context;
+      return context;
+    }
+
+    function getAdaptiveThresholds(context) {
+      const calibratedPalmSizePx =
+        calibrationProfile?.palmSizePx || context.palmSizePx || 90;
+      const touchDistanceRatio = clamp(
+        (calibrationProfile?.touchDistanceRatio || TOUCH_DISTANCE_RATIO) *
+          (context.angleUnstable ? 0.9 : 1) *
+          (context.tooFarForCommands ? 0.82 : 1),
+        0.22,
+        0.48
+      );
+      const palmFacingPenalty = 1 - context.palmFacingScore;
+      const farPenalty =
+        context.distanceScale < 0.72
+          ? (0.72 - context.distanceScale) * FAR_DISTANCE_ANGLE_PENALTY
+          : 0;
+      const angleThreshold = clamp(
+        ANGLE_THRESHOLD -
+          (calibrationProfile ? 7 : 0) +
+          palmFacingPenalty * 10 +
+          farPenalty -
+          (context.zoneModifier?.angleRelax || 0),
+        126,
+        154
+      );
+      const swipeMinDistance = clamp(
+        Math.max(
+          SWIPE_MIN_DISTANCE * 0.78,
+          calibratedPalmSizePx * 1.15,
+          canvas.width * 0.105
+        ),
+        62,
+        145
+      );
+      const swipeMaxVerticalDrift = clamp(
+        Math.max(SWIPE_MAX_VERTICAL_DRIFT * 0.8, calibratedPalmSizePx * 0.88),
+        55,
+        120
+      );
+      const minCommandConfidence =
+        context.lowConfidence || context.partialHand
+          ? 0.82
+          : MIN_COMMAND_CONFIDENCE;
+      const sensitiveConfidenceBoost =
+        context.zoneModifier?.sensitiveConfidenceBoost || 0;
+      const openPalmSpreadRatio =
+        calibrationProfile?.fingerSpread
+          ? clamp(calibrationProfile.fingerSpread * 0.72, 0.62, 1.6)
+          : 0.85;
+
+      return {
+        angleThreshold,
+        distanceRatioPip: DISTANCE_RATIO_PIP,
+        distanceRatioDip: DISTANCE_RATIO_DIP,
+        touchDistanceRatio,
+        swipeMinDistance,
+        swipeMaxVerticalDrift,
+        minCommandConfidence,
+        minSensitiveCommandConfidence: Math.max(
+          minCommandConfidence,
+          MIN_SENSITIVE_COMMAND_CONFIDENCE + sensitiveConfidenceBoost
+        ),
+        pointerAllowed: !context.tooFarForPointer,
+        commandDistanceAllowed: !context.tooFarForCommands,
+        openPalmSpreadRatio,
+        partialHandThreshold: context.partialHandThreshold,
+        screenZone: context.screenZone,
+        zoneLevel: context.zoneLevel,
+        zoneBlend: context.zoneBlend,
+        smoothingBoost: context.zoneModifier?.smoothingBoost || 0
+      };
+    }
+
+    function getAngle3D(a, b, c) {
+      const ab = {
+        x: a.x - b.x,
+        y: a.y - b.y,
+        z: (a.z || 0) - (b.z || 0)
+      };
+
+      const cb = {
+        x: c.x - b.x,
+        y: c.y - b.y,
+        z: (c.z || 0) - (b.z || 0)
+      };
+
+      const dot = ab.x * cb.x + ab.y * cb.y + ab.z * cb.z;
+
+      const abLength = Math.sqrt(
+        ab.x * ab.x + ab.y * ab.y + ab.z * ab.z
+      );
+
+      const cbLength = Math.sqrt(
+        cb.x * cb.x + cb.y * cb.y + cb.z * cb.z
+      );
+
+      if (abLength === 0 || cbLength === 0) {
+        return 0;
+      }
+
+      const cosine = dot / (abLength * cbLength);
+      const clampedCosine = Math.max(-1, Math.min(1, cosine));
+
+      return Math.acos(clampedCosine) * (180 / Math.PI);
+    }
+
+    function isIndexFingerExtended(hand, thresholds = null) {
+      /*
+        검지 landmark 번호
+        5 = MCP
+        6 = PIP
+        7 = DIP
+        8 = TIP
+      */
+
+      const wrist = hand[0];
+
+      const indexMCP = hand[5];
+      const indexPIP = hand[6];
+      const indexDIP = hand[7];
+      const indexTIP = hand[8];
+
+      const anglePIP = getAngle3D(indexMCP, indexPIP, indexDIP);
+      const angleDIP = getAngle3D(indexPIP, indexDIP, indexTIP);
+
+      const wristToPIP = getDistance3D(wrist, indexPIP);
+      const wristToDIP = getDistance3D(wrist, indexDIP);
+      const wristToTIP = getDistance3D(wrist, indexTIP);
+
+      const angleCondition =
+        anglePIP > (thresholds?.angleThreshold || ANGLE_THRESHOLD) &&
+        angleDIP > (thresholds?.angleThreshold || ANGLE_THRESHOLD);
+
+      const distanceCondition =
+        wristToTIP > wristToPIP * (thresholds?.distanceRatioPip || DISTANCE_RATIO_PIP) &&
+        wristToTIP > wristToDIP * (thresholds?.distanceRatioDip || DISTANCE_RATIO_DIP);
+
+      /*
+        직선비율은 사용하지 않음.
+        현재 기준은 각도 + 거리 조건만 사용.
+      */
+      const extended = angleCondition && distanceCondition;
+
+      return {
+        extended,
+        angle1: anglePIP,
+        angle2: angleDIP,
+        wristToTip: wristToTIP,
+        wristToPip: wristToPIP,
+        wristToDip: wristToDIP,
+        angleCondition,
+        distanceCondition
+      };
+    }
+
+    function updateIndexGestureState(isExtended) {
+      if (isExtended) {
+        indexExtendedCount++;
+        indexFoldedCount = 0;
+      } else {
+        indexFoldedCount++;
+        indexExtendedCount = 0;
+      }
+
+      if (!pointerActive && indexExtendedCount >= REQUIRED_ON_FRAMES) {
+        pointerActive = true;
+      }
+
+      if (pointerActive && indexFoldedCount >= REQUIRED_OFF_FRAMES) {
+        pointerActive = false;
+        resetSmoothing();
+      }
+
+      return {
+        pointerActive,
+        indexExtendedCount,
+        indexFoldedCount
+      };
+    }
+
+    function getSmoothedPoint(x, y) {
+      const clampedX = Math.min(
+        canvas.width - POINTER_EDGE_PADDING,
+        Math.max(POINTER_EDGE_PADDING, x)
+      );
+      const clampedY = Math.min(
+        canvas.height - POINTER_EDGE_PADDING,
+        Math.max(POINTER_EDGE_PADDING, y)
+      );
+
+      if (smoothedX === null || smoothedY === null) {
+        smoothedX = clampedX;
+        smoothedY = clampedY;
+
+        return {
+          x: smoothedX,
+          y: smoothedY,
+          smoothing: 1,
+          distance: 0
+        };
+      }
+
+      const distance = getDistance2D(smoothedX, smoothedY, clampedX, clampedY);
+
+      if (distance < POINTER_DEAD_ZONE) {
+        return {
+          x: smoothedX,
+          y: smoothedY,
+          smoothing: 0,
+          distance
+        };
+      }
+
+      if (distance > JUMP_LIMIT) {
+        smoothedX = clampedX;
+        smoothedY = clampedY;
+
+        return {
+          x: smoothedX,
+          y: smoothedY,
+          smoothing: 1,
+          distance
+        };
+      }
+
+      let adaptiveSmoothing;
+
+      if (distance < 8) {
+        adaptiveSmoothing = 0.16;
+      } else if (distance < 15) {
+        adaptiveSmoothing = 0.26;
+      } else if (distance < 50) {
+        adaptiveSmoothing = 0.45;
+      } else if (distance < 110) {
+        adaptiveSmoothing = 0.68;
+      } else {
+        adaptiveSmoothing = 0.86;
+      }
+
+      adaptiveSmoothing = clamp(
+        adaptiveSmoothing + (lastHandPoseContext?.zoneModifier?.smoothingBoost || 0),
+        0.12,
+        0.92
+      );
+
+      smoothedX = smoothedX + (clampedX - smoothedX) * adaptiveSmoothing;
+      smoothedY = smoothedY + (clampedY - smoothedY) * adaptiveSmoothing;
+
+      return {
+        x: smoothedX,
+        y: smoothedY,
+        smoothing: adaptiveSmoothing,
+        distance
+      };
+    }
+
+    function normalizedToScreen(point) {
+      /*
+        video를 CSS에서 scaleX(-1)로 좌우 반전했기 때문에
+        포인터 좌표도 1 - x 로 뒤집어야 실제 화면과 맞음.
+      */
+      return {
+        x: (1 - point.x) * canvas.width,
+        y: point.y * canvas.height
+      };
+    }
+
+    function getHandLabel(handResult, index) {
+      const handednesses = handResult.handednesses || handResult.handedness;
+
+      if (!handednesses || !handednesses[index]) {
+        return {
+          label: "Unknown",
+          score: 0
+        };
+      }
+
+      const category = handednesses[index][0];
+
+      return {
+        label: category.categoryName,
+        score: category.score
+      };
+    }
+
+    function getTargetHand(handResult) {
+      const targetHandLabel = getPointerTargetHandLabel();
+
+      if (!handResult.landmarks || handResult.landmarks.length === 0) {
+        return {
+          hand: null,
+          label: "None",
+          score: 0,
+          targetHandLabel,
+          reason: "손 인식 안 됨"
+        };
+      }
+
+      for (let i = 0; i < handResult.landmarks.length; i++) {
+        const handInfo = getHandLabel(handResult, i);
+
+        if (handInfo.label === targetHandLabel) {
+          return {
+            hand: handResult.landmarks[i],
+            label: handInfo.label,
+            score: handInfo.score,
+            targetHandLabel,
+            reason: "handedness 기준 선택"
+          };
+        }
+      }
+
+      return {
+        hand: null,
+        label: "None",
+        score: 0,
+        targetHandLabel,
+        reason: `${targetHandLabel} 손을 찾지 못함`
+      };
+    }
+
+    function getFingerExtensionStates(hand, thresholds = getAdaptiveThresholds(getHandPoseContext(hand))) {
+      const wrist = hand[0];
+      const thumbMCP = hand[2];
+      const thumbIP = hand[3];
+      const thumbTIP = hand[4];
+      const indexMCP = hand[5];
+      const indexPIP = hand[6];
+      const indexDIP = hand[7];
+      const indexTIP = hand[8];
+      const middleMCP = hand[9];
+      const middlePIP = hand[10];
+      const middleDIP = hand[11];
+      const middleTIP = hand[12];
+      const ringMCP = hand[13];
+      const ringPIP = hand[14];
+      const ringDIP = hand[15];
+      const ringTIP = hand[16];
+      const pinkyMCP = hand[17];
+      const pinkyPIP = hand[18];
+      const pinkyDIP = hand[19];
+      const pinkyTIP = hand[20];
+
+      const palmSize = getDistance3D(wrist, middleMCP);
+
+      function getFingerState(mcp, pip, dip, tip) {
+        const anglePIP = getAngle3D(mcp, pip, dip);
+        const angleDIP = getAngle3D(pip, dip, tip);
+        const wristToTip = getDistance3D(wrist, tip);
+        const wristToPip = getDistance3D(wrist, pip);
+        const wristToDip = getDistance3D(wrist, dip);
+        const tipPipRatio = wristToTip / Math.max(wristToPip, 0.001);
+        const tipDipRatio = wristToTip / Math.max(wristToDip, 0.001);
+        const commandAngleThreshold =
+          thresholds.angleThreshold + STRICT_COMMAND_ANGLE_OFFSET;
+        const commandDistanceRatioPip =
+          thresholds.distanceRatioPip + STRICT_COMMAND_DISTANCE_PIP_BONUS;
+        const commandDistanceRatioDip =
+          thresholds.distanceRatioDip + STRICT_COMMAND_DISTANCE_DIP_BONUS;
+        const angleScore = Math.min(
+          scoreThreshold(anglePIP, thresholds.angleThreshold - 10, commandAngleThreshold),
+          scoreThreshold(angleDIP, thresholds.angleThreshold - 14, commandAngleThreshold)
+        );
+        const distanceScore = Math.min(
+          scoreThreshold(tipPipRatio, thresholds.distanceRatioPip * 0.96, commandDistanceRatioPip),
+          scoreThreshold(tipDipRatio, thresholds.distanceRatioDip * 0.96, commandDistanceRatioDip)
+        );
+        // 일반 웹캠에서는 손 회전/거리 때문에 중지·약지·새끼가 각도+거리 조건만으로
+        // 과하게 자주 접힘 처리될 수 있다. 그래서 화면상 손가락 끝이 PIP보다 위에 있는지
+        // 보는 보조 점수를 추가한다. 이 값은 오작동을 막기 위해 단독 조건이 아니라 보조 조건으로만 사용한다.
+        const verticalDeltaRatio = (pip.y - tip.y) / Math.max(palmSize, 0.001);
+        const verticalScore = scoreThreshold(verticalDeltaRatio, 0.02, 0.20);
+        const rawScore = clamp(
+          Math.max(
+            angleScore * 0.58 + distanceScore * 0.34 + verticalScore * 0.08,
+            verticalScore * 0.72 + angleScore * 0.20 + distanceScore * 0.08
+          ),
+          0,
+          1
+        );
+
+        // 주먹 상태에서는 접힌 손가락 끝들이 PIP/DIP 주변에 모여서
+        // verticalScore만 높게 튀거나 검지+중지 터치로 오인식될 수 있다.
+        // 따라서 손가락이 실제로 손목에서 멀어졌는지 확인해 접힘 상태의 점수를 제한한다.
+        const foldedByDistance =
+          tipPipRatio < thresholds.distanceRatioPip * 0.90 ||
+          tipDipRatio < thresholds.distanceRatioDip * 0.90;
+        const score = foldedByDistance ? Math.min(rawScore, 0.38) : rawScore;
+
+        const strictExtended =
+          anglePIP > thresholds.angleThreshold &&
+          angleDIP > thresholds.angleThreshold - 4 &&
+          wristToTip > wristToPip * (thresholds.distanceRatioPip * 0.98) &&
+          wristToTip > wristToDip * (thresholds.distanceRatioDip * 0.98);
+        const relaxedExtended =
+          !foldedByDistance &&
+          verticalScore >= 0.62 &&
+          anglePIP > thresholds.angleThreshold - 18 &&
+          angleDIP > thresholds.angleThreshold - 24 &&
+          tipPipRatio > thresholds.distanceRatioPip * 0.95 &&
+          tipDipRatio > thresholds.distanceRatioDip * 0.95;
+        const extended = strictExtended || relaxedExtended;
+        const commandExtended =
+          (anglePIP > commandAngleThreshold &&
+            angleDIP > commandAngleThreshold - 4 &&
+            wristToTip > wristToPip * (commandDistanceRatioPip * 0.98) &&
+            wristToTip > wristToDip * (commandDistanceRatioDip * 0.98)) ||
+          (extended && score >= 0.62);
+
+        return {
+          extended,
+          commandExtended,
+          score,
+          anglePIP,
+          angleDIP,
+          tipPipRatio,
+          tipDipRatio,
+          verticalDeltaRatio,
+          verticalScore,
+          foldedByDistance
+        };
+      }
+
+      function getThumbState() {
+        const thumbAngle = getAngle3D(thumbMCP, thumbIP, thumbTIP);
+        const wristToThumbTip = getDistance3D(wrist, thumbTIP);
+        const wristToThumbIp = getDistance3D(wrist, thumbIP);
+        const thumbMcpToTip = getDistance3D(thumbMCP, thumbTIP);
+        const thumbTipToIndexMcp = getDistance3D(thumbTIP, indexMCP);
+        const thumbTipToIndexPip = getDistance3D(thumbTIP, indexPIP);
+        const thumbTipToMiddlePip = getDistance3D(thumbTIP, middlePIP);
+        const thumbTipToRingPip = getDistance3D(thumbTIP, ringPIP);
+        const thumbTipToPinkyPip = getDistance3D(thumbTIP, pinkyPIP);
+        const palmCenterForThumb = {
+          x: (wrist.x + indexMCP.x + middleMCP.x + ringMCP.x + pinkyMCP.x) / 5,
+          y: (wrist.y + indexMCP.y + middleMCP.y + ringMCP.y + pinkyMCP.y) / 5,
+          z:
+            ((wrist.z || 0) +
+              (indexMCP.z || 0) +
+              (middleMCP.z || 0) +
+              (ringMCP.z || 0) +
+              (pinkyMCP.z || 0)) /
+            5
+        };
+        const thumbTipToPalmCenter = getDistance3D(thumbTIP, palmCenterForThumb);
+        const wristTipRatio = wristToThumbTip / Math.max(wristToThumbIp, 0.001);
+        const mcpTipRatio = thumbMcpToTip / Math.max(palmSize, 0.001);
+        const spreadRatio = thumbTipToIndexMcp / Math.max(palmSize, 0.001);
+        const nearestFingerPipRatio = Math.min(
+          thumbTipToIndexPip,
+          thumbTipToMiddlePip,
+          thumbTipToRingPip,
+          thumbTipToPinkyPip
+        ) / Math.max(palmSize, 0.001);
+        const palmCenterDistanceRatio =
+          thumbTipToPalmCenter / Math.max(palmSize, 0.001);
+        const clearOfPalmScore = clamp(
+          scoreThreshold(nearestFingerPipRatio, 0.46, 0.92) * 0.58 +
+            scoreThreshold(palmCenterDistanceRatio, 0.52, 1.05) * 0.42,
+          0,
+          1
+        );
+        // 주먹 위에 엄지가 접혀 얹힌 자세는 엄지 길이/각도가 어느 정도 살아 있어도
+        // 엄지 끝이 접힌 검지·중지 관절이나 손바닥 중심에 매우 가깝다.
+        // 이 경우를 previous_page용 엄지로 보지 않기 위한 가드다.
+        const thumbTuckedAcrossFist =
+          clearOfPalmScore < 0.32 ||
+          (nearestFingerPipRatio < 0.58 && palmCenterDistanceRatio < 0.72);
+
+        // 엄지는 사람마다 펴지는 방향이 다르다.
+        // 기존 기준은 "옆으로 벌어진 엄지"를 잘 잡지만, 사진처럼 주먹을 쥐고 엄지만 위로 세운
+        // thumbs-up 포즈는 spreadRatio가 낮아져 누락될 수 있다.
+        // 그래서 기존 옆 벌림 기준 + 위로 세운 엄지 전용 기준을 함께 사용한다.
+        const angleScore = scoreThreshold(thumbAngle, 104, 154);
+        const lengthScore = scoreThreshold(mcpTipRatio, 0.26, 0.52);
+        const wristScore = scoreThreshold(wristTipRatio, 0.84, 1.08);
+        const spreadScore = scoreThreshold(spreadRatio, 0.34, 0.72);
+
+        // CSS 화면은 좌우 반전이지만 landmark의 y축은 위가 작고 아래가 크다.
+        // thumbTIP이 thumbIP/MCP보다 위에 있으면 양수로 커진다.
+        const tipAboveIpRatio = (thumbIP.y - thumbTIP.y) / Math.max(palmSize, 0.001);
+        const ipAboveMcpRatio = (thumbMCP.y - thumbIP.y) / Math.max(palmSize, 0.001);
+        const tipAboveMcpRatio = (thumbMCP.y - thumbTIP.y) / Math.max(palmSize, 0.001);
+        const tipAbovePalmRatio = (middleMCP.y - thumbTIP.y) / Math.max(palmSize, 0.001);
+        const thumbUpVerticalScore = clamp(
+          scoreThreshold(tipAboveIpRatio, 0.04, 0.34) * 0.22 +
+            scoreThreshold(ipAboveMcpRatio, -0.06, 0.18) * 0.16 +
+            scoreThreshold(tipAboveMcpRatio, 0.12, 0.62) * 0.32 +
+            scoreThreshold(tipAbovePalmRatio, 0.08, 0.62) * 0.18 +
+            lengthScore * 0.12,
+          0,
+          1
+        );
+
+        const sideSpreadScore = clamp(
+          angleScore * 0.25 + lengthScore * 0.36 + wristScore * 0.12 + spreadScore * 0.27,
+          0,
+          1
+        );
+        // 최종 엄지 점수는 옆으로 벌린 엄지와 위로 세운 엄지 중 더 강한 쪽을 사용한다.
+        const score = Math.max(sideSpreadScore, thumbUpVerticalScore * 0.94);
+
+        const thumbLengthIntent = lengthScore >= 0.48 && mcpTipRatio >= 0.34;
+        const thumbSpreadIntent = spreadScore >= 0.48 && spreadRatio >= 0.46;
+        const thumbUpIntent =
+          thumbUpVerticalScore >= 0.50 &&
+          mcpTipRatio >= 0.32 &&
+          tipAboveMcpRatio >= 0.22 &&
+          tipAbovePalmRatio >= 0.14 &&
+          thumbAngle >= 98 &&
+          (clearOfPalmScore >= 0.24 || tipAboveMcpRatio >= 0.42);
+
+        const sideIntent =
+          sideSpreadScore >= 0.52 &&
+          spreadRatio >= 0.56 &&
+          mcpTipRatio >= 0.38 &&
+          clearOfPalmScore >= 0.38;
+
+        const extended =
+          (!thumbTuckedAcrossFist && score >= 0.40) ||
+          thumbUpIntent ||
+          sideIntent ||
+          (!thumbTuckedAcrossFist && thumbLengthIntent && spreadScore >= 0.34) ||
+          (!thumbTuckedAcrossFist && thumbSpreadIntent && lengthScore >= 0.40);
+        const commandExtended =
+          (!thumbTuckedAcrossFist && score >= 0.52 && clearOfPalmScore >= 0.34) ||
+          (thumbUpIntent && thumbUpVerticalScore >= 0.54) ||
+          sideIntent ||
+          (extended && !thumbTuckedAcrossFist && thumbLengthIntent && spreadScore >= 0.40) ||
+          (extended && !thumbTuckedAcrossFist && thumbSpreadIntent && lengthScore >= 0.46);
+
+        return {
+          extended,
+          commandExtended,
+          score,
+          sideSpreadScore,
+          thumbUpVerticalScore,
+          thumbUpIntent,
+          sideIntent,
+          thumbTuckedAcrossFist,
+          clearOfPalmScore,
+          nearestFingerPipRatio,
+          palmCenterDistanceRatio,
+          angle: thumbAngle,
+          wristTipRatio,
+          mcpTipRatio,
+          spreadRatio,
+          tipAboveIpRatio,
+          ipAboveMcpRatio,
+          tipAboveMcpRatio,
+          tipAbovePalmRatio
+        };
+      }
+      const thumbState = getThumbState();
+
+      const indexState = getFingerState(indexMCP, indexPIP, indexDIP, indexTIP);
+      const middleState = getFingerState(middleMCP, middlePIP, middleDIP, middleTIP);
+      const ringState = getFingerState(ringMCP, ringPIP, ringDIP, ringTIP);
+      const pinkyState = getFingerState(pinkyMCP, pinkyPIP, pinkyDIP, pinkyTIP);
+
+      return {
+        thumb: thumbState.extended,
+        thumbCommand: thumbState.commandExtended,
+        thumbScore: thumbState.score,
+        thumbAngle: thumbState.angle,
+        thumbMcpTipRatio: thumbState.mcpTipRatio,
+        thumbSpreadRatio: thumbState.spreadRatio,
+        thumbWristTipRatio: thumbState.wristTipRatio,
+        thumbUpScore: thumbState.thumbUpVerticalScore,
+        thumbUpIntent: thumbState.thumbUpIntent,
+        thumbSideIntent: thumbState.sideIntent,
+        thumbSideSpreadScore: thumbState.sideSpreadScore,
+        thumbTuckedAcrossFist: thumbState.thumbTuckedAcrossFist,
+        thumbClearOfPalmScore: thumbState.clearOfPalmScore,
+        thumbNearestFingerPipRatio: thumbState.nearestFingerPipRatio,
+        thumbPalmCenterDistanceRatio: thumbState.palmCenterDistanceRatio,
+        thumbTipAboveMcpRatio: thumbState.tipAboveMcpRatio,
+        index: indexState.extended,
+        middle: middleState.extended,
+        ring: ringState.extended,
+        pinky: pinkyState.extended,
+        indexCommand: indexState.commandExtended,
+        middleCommand: middleState.commandExtended,
+        ringCommand: ringState.commandExtended,
+        pinkyCommand: pinkyState.commandExtended,
+        indexScore: indexState.score,
+        middleScore: middleState.score,
+        ringScore: ringState.score,
+        pinkyScore: pinkyState.score,
+        palmSize
+      };
+    }
+
+    function scoreGestureCandidates(rawGesture, context, thresholds) {
+      const touchScore = clamp(
+        1 - rawGesture.thumbIndexDistance / Math.max(rawGesture.touchThreshold, 0.001),
+        0,
+        1
+      );
+      const middleTouchScore = clamp(
+        1 - rawGesture.indexMiddleDistance / Math.max(rawGesture.middleTouchThreshold, 0.001),
+        0,
+        1
+      );
+      const openPalmSpreadScore = clamp(
+        Math.min(
+          rawGesture.extendedCount / 5,
+          rawGesture.fingerSpread / Math.max(rawGesture.thresholds.openPalmSpreadRatio, 0.001)
+        ),
+        0,
+        1
+      );
+      const thumbFoldScore =
+        rawGesture.rawThumbOnly
+          ? clamp(
+              rawGesture.thumbScore * 0.66 +
+                (1 - rawGesture.maxNonThumbScore * 0.45) * 0.34,
+              0.50,
+              1
+            )
+          : rawGesture.thumb || rawGesture.thumbScore >= 0.42
+          ? clamp(rawGesture.thumbScore * 0.72, 0.30, 0.54)
+          : 0;
+      const strictSwipeFingerScore = Math.min(
+        rawGesture.indexScore,
+        rawGesture.middleScore,
+        1 - rawGesture.ringScore * 0.28,
+        1 - rawGesture.pinkyScore * 0.28
+      );
+      const pinkyOnlyScore = rawGesture.rawPinkyOnly
+        ? clamp(
+            rawGesture.pinkyScore * 0.72 +
+              (1 - Math.max(rawGesture.indexScore, rawGesture.middleScore)) * 0.2 +
+              (1 - rawGesture.ringScore) * 0.08,
+            0,
+            1
+          )
+        : 0;
+      const environmentScore = clamp(
+        context.palmFacingScore * 0.45 +
+          context.stabilityScore * 0.3 +
+          context.inFrameRatio * 0.25,
+        0,
+        1
+      );
+      const sensitiveBlocked =
+        context.lowConfidence ||
+        context.partialHand ||
+        context.angleUnstable ||
+        context.tooFarForCommands ||
+        context.fastMotion;
+      // 스와이프는 빠르게 움직여야 실행되는 제스처이므로 fastMotion으로 막지 않는다.
+      // 손 일부가 가장자리에서 잘려도 검지+중지 터치가 확실하면 스와이프 후보는 유지한다.
+      const swipeBlocked =
+        context.lowConfidence ||
+        context.angleUnstable ||
+        context.tooFarForCommands;
+      const getSensitiveBlockedReason = () => {
+        if (context.lowConfidence) return "handedness 신뢰도 낮음";
+        if (context.partialHand) return "손 일부가 화면 밖";
+        if (context.tooFarForCommands) return "웹캠과 거리가 멂";
+        if (context.angleUnstable) return "카메라 각도 불안정";
+        if (context.fastMotion) return "손 이동 중";
+        return "";
+      };
+      const previousBlocked =
+        (context.partialHand && rawGesture.thumbScore < 0.62) ||
+        (context.angleUnstable && context.palmFacingScore < 0.08);
+      const clearBlocked =
+        sensitiveBlocked || context.stabilityScore < MIN_STABILITY_FOR_CLEAR;
+
+      return {
+        mode_toggle: {
+          command: "mode_toggle",
+          score: pinkyOnlyScore,
+          blockedBy: context.partialHand ? "손 일부가 화면 밖" : "",
+          reason: `새끼 단독 점수 ${pinkyOnlyScore.toFixed(2)}`
+        },
+        clear_page: {
+          command: "clear_page",
+          score: rawGesture.rawOpenPalm
+            ? clamp(openPalmSpreadScore * 0.44 + environmentScore * 0.56, 0, 1)
+            : 0,
+          blockedBy: clearBlocked
+            ? context.stabilityScore < MIN_STABILITY_FOR_CLEAR
+              ? "손 움직임이 큼"
+              : getSensitiveBlockedReason()
+            : "",
+          reason: `손가락 ${rawGesture.extendedCount}/5, 안정도 ${context.stabilityScore.toFixed(2)}`
+        },
+        next_page: {
+          command: "next_page",
+          score: rawGesture.rawTwoFingerSwipeReady
+            ? clamp(
+                0.52 +
+                  middleTouchScore * 0.18 +
+                  strictSwipeFingerScore * 0.2 +
+                  environmentScore * 0.1,
+                0,
+                1
+              )
+            : 0,
+          blockedBy:
+            swipeBlocked
+              ? context.lowConfidence
+                ? "handedness 신뢰도 낮음"
+                : context.angleUnstable
+                ? "카메라 각도 불안정"
+                : "웹캠과 거리가 멂"
+              : "",
+          reason: `검지+중지 터치 점수 ${middleTouchScore.toFixed(2)}`
+        },
+        underline: {
+          command: "underline",
+          score: rawGesture.rawUnderlinePinch
+            ? clamp(0.56 + touchScore * 0.26 + environmentScore * 0.18, 0, 1)
+            : 0,
+          blockedBy: sensitiveBlocked ? getSensitiveBlockedReason() : "",
+          reason: `엄지+검지 터치 점수 ${touchScore.toFixed(2)}`
+        },
+        previous_page: {
+          command: "previous_page",
+          score: rawGesture.rawThumbOnly
+            ? clamp(0.18 + thumbFoldScore * 0.62 + environmentScore * 0.20, 0, 1)
+            : 0,
+          blockedBy: previousBlocked
+            ? context.partialHand
+              ? "손 일부가 화면 밖"
+              : "카메라 각도 불안정"
+            : "",
+          reason: `엄지 단독 점수 ${thumbFoldScore.toFixed(2)}, 다른 손가락 최대 ${rawGesture.maxNonThumbScore.toFixed(2)}`
+        },
+        pointer: {
+          command: "pointer",
+          score: clamp(context.inFrameRatio * 0.4 + context.stabilityScore * 0.25 + context.palmFacingScore * 0.35, 0, 1),
+          blockedBy: context.partialHand
+            ? "손 일부가 화면 밖"
+            : context.tooFarForPointer
+            ? "웹캠과 거리가 멂"
+            : "",
+          reason: "포인터 기본 모드"
+        }
+      };
+    }
+
+    function getGestureCommandState(hand, context, thresholds) {
+      const fingers = getFingerExtensionStates(hand, thresholds);
+      const thumbTip = hand[4];
+      const indexTip = hand[8];
+      const middleTip = hand[12];
+      const palmSize = Math.max(fingers.palmSize, 0.001);
+      const thumbIndexDistance = getDistance3D(thumbTip, indexTip);
+      const indexMiddleDistance = getDistance3D(indexTip, middleTip);
+      const touchThreshold = palmSize * thresholds.touchDistanceRatio;
+      const middleTouchThreshold = palmSize * clamp(thresholds.touchDistanceRatio * 1.32, 0.32, 0.62);
+      const thumbIndexTouch = thumbIndexDistance < touchThreshold;
+      const indexMiddleTouch = indexMiddleDistance < middleTouchThreshold;
+      const extendedCount = [
+        fingers.thumb,
+        fingers.index,
+        fingers.middle,
+        fingers.ring,
+        fingers.pinky
+      ].filter(Boolean).length;
+      const nonThumbCommandCount = [
+        fingers.indexCommand,
+        fingers.middleCommand,
+        fingers.ringCommand,
+        fingers.pinkyCommand
+      ].filter(Boolean).length;
+      const maxNonThumbScore = Math.max(
+        fingers.indexScore,
+        fingers.middleScore,
+        fingers.ringScore,
+        fingers.pinkyScore
+      );
+      const twoFingerReady =
+        (fingers.indexCommand || fingers.index || fingers.indexScore >= 0.55) &&
+        (fingers.middleCommand || fingers.middle || fingers.middleScore >= 0.45) &&
+        fingers.ringScore < 0.85 &&
+        fingers.pinkyScore < 0.85;
+      // indexMiddleTouch는 주먹에서도 검지/중지 끝이 가까워져 YES가 될 수 있다.
+      // 그래서 실제 스와이프 의도는 두 손가락이 어느 정도 펴진 상태까지 함께 확인한다.
+      const intentionalIndexMiddleTouch = indexMiddleTouch && twoFingerReady;
+      const rawPinkyOnly =
+        (fingers.pinkyCommand || fingers.pinky || fingers.pinkyScore >= 0.44) &&
+        !fingers.indexCommand &&
+        !fingers.middleCommand &&
+        Math.max(fingers.indexScore, fingers.middleScore) < 0.84 &&
+        fingers.ringScore < 0.96;
+      const rawOpenPalmDetected =
+        fingers.index &&
+        fingers.middle &&
+        fingers.ring &&
+        fingers.pinky &&
+        extendedCount >= 4 &&
+        context.fingerSpread >= thresholds.openPalmSpreadRatio * 0.78;
+
+      const nonThumbScores = [
+        fingers.indexScore,
+        fingers.middleScore,
+        fingers.ringScore,
+        fingers.pinkyScore
+      ];
+      const nonThumbOpenCount = nonThumbScores.filter((score) => score >= 0.72).length;
+      const strongNonThumbOpenCount = nonThumbScores.filter((score) => score >= 0.84).length;
+
+      // 주먹 오탐 방지:
+      // 엄지는 손가락 구조상 닫힌 주먹에서도 길이/각도 점수가 높게 나올 수 있다.
+      // 그래서 previous_page는 단순 thumbScore가 아니라 "위로 세운 엄지" 또는
+      // "옆으로 확실히 벌어진 엄지" 의도가 확인될 때만 후보로 올린다.
+      const thumbUpGestureIntent =
+        fingers.thumbUpIntent &&
+        fingers.thumbUpScore >= 0.54 &&
+        fingers.thumbTipAboveMcpRatio >= 0.22 &&
+        fingers.thumbMcpTipRatio >= 0.32 &&
+        (
+          fingers.thumbClearOfPalmScore >= 0.24 ||
+          fingers.thumbTipAboveMcpRatio >= 0.42
+        );
+      const thumbSideGestureIntent =
+        fingers.thumbSideIntent &&
+        fingers.thumbSideSpreadScore >= 0.54 &&
+        fingers.thumbSpreadRatio >= 0.58 &&
+        fingers.thumbMcpTipRatio >= 0.38 &&
+        fingers.thumbClearOfPalmScore >= 0.38;
+      const thumbFallbackIntent =
+        fingers.thumbCommand &&
+        fingers.thumbScore >= 0.64 &&
+        fingers.thumbClearOfPalmScore >= 0.40 &&
+        (
+          fingers.thumbSpreadRatio >= 0.58 ||
+          fingers.thumbTipAboveMcpRatio >= 0.32
+        );
+      const thumbGestureIntent =
+        thumbUpGestureIntent ||
+        thumbSideGestureIntent ||
+        thumbFallbackIntent;
+      const tuckedThumbFistLike =
+        fingers.thumbTuckedAcrossFist &&
+        !thumbUpGestureIntent &&
+        !thumbSideGestureIntent;
+      const closedFistLike =
+        tuckedThumbFistLike ||
+        (
+          !thumbGestureIntent &&
+          nonThumbOpenCount === 0 &&
+          strongNonThumbOpenCount === 0 &&
+          context.fingerSpread < thresholds.openPalmSpreadRatio * 0.72
+        );
+      const thumbIntent = thumbGestureIntent && !closedFistLike && !tuckedThumbFistLike;
+
+      const rawGesture = {
+        ...fingers,
+        thumbIndexTouch,
+        indexMiddleTouch,
+        rawOpenPalm: rawOpenPalmDetected,
+        rawThumbOnly:
+          thumbIntent &&
+          !thumbIndexTouch &&
+          !intentionalIndexMiddleTouch &&
+          !closedFistLike &&
+          nonThumbCommandCount <= 1 &&
+          nonThumbOpenCount <= 1 &&
+          strongNonThumbOpenCount === 0 &&
+          maxNonThumbScore < 0.86,
+        nonThumbOpenCount,
+        strongNonThumbOpenCount,
+        thumbIntent,
+        thumbGestureIntent,
+        thumbUpGestureIntent,
+        thumbSideGestureIntent,
+        thumbFallbackIntent,
+        tuckedThumbFistLike,
+        closedFistLike,
+        rawPinkyOnly,
+        rawUnderlinePinch: thumbIndexTouch,
+        intentionalIndexMiddleTouch,
+        rawTwoFingerSwipeReady: intentionalIndexMiddleTouch,
+        extendedCount,
+        fingerSpread: context.fingerSpread,
+        nonThumbCommandCount,
+        maxNonThumbScore,
+        thumbIndexDistance,
+        indexMiddleDistance,
+        touchThreshold,
+        middleTouchThreshold,
+        context,
+        thresholds
+      };
+
+      const candidates = scoreGestureCandidates(rawGesture, context, thresholds);
+      candidates.mode_toggle.blockedBy = "";
+
+      // 복합 제스처가 감지되면 단순 검지 포인터/엄지 이전 페이지가 먼저 먹지 않도록 차단한다.
+      if (rawGesture.rawTwoFingerSwipeReady) {
+        if (candidates.pointer) candidates.pointer.blockedBy = "스와이프 제스처 우선";
+        if (candidates.previous_page) candidates.previous_page.blockedBy = "스와이프 제스처 우선";
+      }
+
+      if (rawGesture.rawUnderlinePinch) {
+        if (candidates.pointer) candidates.pointer.blockedBy = "밑줄 제스처 우선";
+        if (candidates.previous_page) candidates.previous_page.blockedBy = "밑줄 제스처 우선";
+      }
+
+      return {
+        ...rawGesture,
+        candidates
+      };
+    }
+
+    function selectExclusiveGesture(rawGesture) {
+      const priority = ["mode_toggle", "clear_page", "next_page", "underline", "previous_page"];
+      const minScores = {
+        mode_toggle: 0.42,
+        clear_page: rawGesture.thresholds.minSensitiveCommandConfidence,
+        next_page: Math.max(rawGesture.thresholds.minCommandConfidence, 0.54),
+        underline: Math.max(rawGesture.thresholds.minCommandConfidence, 0.55),
+        previous_page: 0.42
+      };
+      let exclusiveMode = "pointer";
+      let selectedCandidate = rawGesture.candidates.pointer;
+      let blockedReason = "";
+
+      for (const command of priority) {
+        const candidate = rawGesture.candidates[command];
+        const aboveThreshold = candidate.score >= minScores[command];
+        if (candidate.score > 0 && candidate.blockedBy) {
+          blockedReason = `${getCommandLabel(command)} 보류: ${candidate.blockedBy}`;
+        }
+        if (aboveThreshold && !candidate.blockedBy) {
+          exclusiveMode = command;
+          selectedCandidate = candidate;
+          blockedReason = "";
+          break;
+        }
+      }
+
+      return {
+        ...rawGesture,
+        thumbOnly: exclusiveMode === "previous_page",
+        modeToggle: exclusiveMode === "mode_toggle",
+        underlinePinch: exclusiveMode === "underline",
+        twoFingerSwipeReady: exclusiveMode === "next_page",
+        openPalm: exclusiveMode === "clear_page",
+        exclusiveMode,
+        confidence: selectedCandidate.score,
+        blockedReason,
+        blocksPointer: exclusiveMode !== "pointer"
+      };
+    }
+
+    function getExclusiveGestureState(rawGesture) {
+      return selectExclusiveGesture(rawGesture);
+    }
+
+
+    function resetUnderlineSmoothing() {
+      underlineSmoothX = null;
+      underlineSmoothY = null;
+    }
+
+    function makeRawUnderlinePoint(point, now) {
+      if (!point) return null;
+      return {
+        x: point.cameraX,
+        y: point.cameraY,
+        rawX: point.rawX,
+        rawY: point.rawY,
+        time: now
+      };
+    }
+
+    function smoothUnderlinePoint(rawPoint, reset = false) {
+      if (!rawPoint) return null;
+
+      if (reset || underlineSmoothX === null || underlineSmoothY === null) {
+        underlineSmoothX = rawPoint.x;
+        underlineSmoothY = rawPoint.y;
+      } else {
+        const distance = getDistance2D(underlineSmoothX, underlineSmoothY, rawPoint.x, rawPoint.y);
+        const smoothing = distance > UNDERLINE_POINT_FAST_DISTANCE
+          ? UNDERLINE_POINT_FAST_SMOOTHING
+          : UNDERLINE_POINT_SMOOTHING;
+        underlineSmoothX = underlineSmoothX + (rawPoint.x - underlineSmoothX) * smoothing;
+        underlineSmoothY = underlineSmoothY + (rawPoint.y - underlineSmoothY) * smoothing;
+      }
+
+      return {
+        ...rawPoint,
+        x: underlineSmoothX,
+        y: underlineSmoothY,
+        rawCameraX: rawPoint.x,
+        rawCameraY: rawPoint.y
+      };
+    }
+
+    function makeUnderlinePoint(point, now, options = {}) {
+      const rawPoint = makeRawUnderlinePoint(point, now);
+      if (!rawPoint || options.raw) {
+        return rawPoint;
+      }
+      return smoothUnderlinePoint(rawPoint, Boolean(options.reset));
+    }
+
+    function dispatchUnderlinePhase(phase, detail, now, extra = {}) {
+      dispatchGestureCommand({
+        command: "underline",
+        phase,
+        active: phase !== "end",
+        source: "thumb_index_pinch_bridge",
+        micHandLabel,
+        targetHandLabel: getPointerTargetHandLabel(),
+        ...detail,
+        ...extra
+      });
+    }
+
+    function startUnderlineStroke(point, detail, now) {
+      resetUnderlineSmoothing();
+      const underlinePoint = makeUnderlinePoint(point, now, { reset: true });
+      if (!underlinePoint) return;
+
+      currentUnderlineStroke = {
+        id: ++underlineStrokeId,
+        style: detail.lineStyle || {
+          color: "#e11d48",
+          width: 4,
+          cap: "round",
+          opacity: 0.95
+        },
+        points: [underlinePoint]
+      };
+      underlineStrokes.push(currentUnderlineStroke);
+      underlineStrokeActive = true;
+      underlineStrokeInGrace = false;
+      underlineLastSeenAt = now;
+      underlineLastGoodPoint = underlinePoint;
+      underlineLastDrawnPoint = underlinePoint;
+      underlinePinchLocked = true;
+      lastCommand = "underline";
+      lastCommandTime = now;
+      updateLastCommandBanner("underline", now);
+      lastUnderlineDebug = {
+        state: "start",
+        gapMs: 0,
+        bridgeDistance: 0,
+        points: currentUnderlineStroke.points.length,
+        reason: "3프레임 연속 인식으로 밑줄 시작"
+      };
+      dispatchUnderlinePhase("start", detail, now, {
+        cameraX: underlinePoint.x,
+        cameraY: underlinePoint.y,
+        strokeId: currentUnderlineStroke.id
+      });
+    }
+
+    function addUnderlinePoint(point, detail, now, phase = "move", bridgeDistance = 0) {
+      const underlinePoint = makeUnderlinePoint(point, now);
+      if (!underlinePoint || !currentUnderlineStroke) return;
+
+      const moveDistance = getPointDistance(underlineLastDrawnPoint, underlinePoint);
+      underlineLastSeenAt = now;
+      underlineLastGoodPoint = underlinePoint;
+
+      if (moveDistance < UNDERLINE_MIN_MOVE_DISTANCE && phase !== "bridge") {
+        lastUnderlineDebug = {
+          state: "hold",
+          gapMs: 0,
+          bridgeDistance: 0,
+          points: currentUnderlineStroke.points.length,
+          reason: "이동량이 작아 새 점 추가 안 함"
+        };
+        return;
+      }
+
+      currentUnderlineStroke.points.push(underlinePoint);
+      underlineLastDrawnPoint = underlinePoint;
+      underlineStrokeInGrace = false;
+      lastUnderlineDebug = {
+        state: phase,
+        gapMs: 0,
+        bridgeDistance,
+        points: currentUnderlineStroke.points.length,
+        reason: phase === "bridge"
+          ? "짧은 끊김 후 재연결 + 반듯한 밑줄 보정"
+          : "반듯한 밑줄 보정 중"
+      };
+      dispatchUnderlinePhase(phase, detail, now, {
+        cameraX: underlinePoint.x,
+        cameraY: underlinePoint.y,
+        strokeId: currentUnderlineStroke.id,
+        bridgeDistance: Math.round(bridgeDistance),
+        points: currentUnderlineStroke.points.length
+      });
+    }
+
+    function endUnderlineStroke(reason, now, shouldDispatch = true) {
+      if (!underlineStrokeActive && !currentUnderlineStroke) return;
+
+      const strokeId = currentUnderlineStroke?.id;
+      const pointCount = currentUnderlineStroke?.points.length || 0;
+      underlineStrokeActive = false;
+      underlineStrokeInGrace = false;
+      currentUnderlineStroke = null;
+      underlineLastGoodPoint = null;
+      underlineLastDrawnPoint = null;
+      underlinePinchLocked = false;
+      underlinePinchCount = 0;
+      resetUnderlineSmoothing();
+      lastUnderlineDebug = {
+        state: "end",
+        gapMs: 0,
+        bridgeDistance: 0,
+        points: pointCount,
+        reason
+      };
+
+      if (shouldDispatch) {
+        dispatchUnderlinePhase("end", {}, now, {
+          strokeId,
+          points: pointCount,
+          reason
+        });
+      }
+    }
+
+    function updateUnderlineStrokeBridge(gesture, point, detail, now) {
+      const isUnderlineIntent = underlineStrokeActive ? !!gesture.rawUnderlinePinch : !!gesture.underlinePinch;
+      const canStart = underlinePinchCount >= REQUIRED_COMMAND_FRAMES;
+
+      if (isUnderlineIntent) {
+        if (!underlineStrokeActive && canStart) {
+          startUnderlineStroke(point, detail, now);
+          return;
+        }
+
+        if (underlineStrokeActive) {
+          if (underlineStrokeInGrace) {
+            const gapMs = now - underlineLastSeenAt;
+            const currentPoint = makeUnderlinePoint(point, now, { raw: true });
+            const bridgeDistance = getPointDistance(underlineLastGoodPoint, currentPoint);
+            const bridgeMaxDistance = getUnderlineBridgeMaxDistance();
+
+            if (gapMs <= UNDERLINE_LOST_GRACE_MS && bridgeDistance <= bridgeMaxDistance) {
+              addUnderlinePoint(point, detail, now, "bridge", bridgeDistance);
+            } else {
+              endUnderlineStroke(
+                bridgeDistance > bridgeMaxDistance
+                  ? `재인식 위치가 너무 멀어 대각선 연결 방지 (${Math.round(bridgeDistance)}px > ${Math.round(bridgeMaxDistance)}px)`
+                  : "끊김 시간이 길어 밑줄 종료",
+                now
+              );
+              if (canStart) {
+                startUnderlineStroke(point, detail, now);
+              }
+            }
+          } else {
+            addUnderlinePoint(point, detail, now, "move", 0);
+          }
+        }
+        return;
+      }
+
+      if (underlineStrokeActive) {
+        const gapMs = now - underlineLastSeenAt;
+
+        if (gapMs <= UNDERLINE_LOST_GRACE_MS) {
+          underlineStrokeInGrace = true;
+          lastUnderlineDebug = {
+            state: "grace",
+            gapMs: Math.round(gapMs),
+            bridgeDistance: 0,
+            points: currentUnderlineStroke?.points.length || 0,
+            reason: "잠깐 끊김: 새 좌표는 추가하지 않고 재인식 대기"
+          };
+        } else {
+          endUnderlineStroke(`${UNDERLINE_LOST_GRACE_MS}ms 이상 재인식 실패`, now);
+        }
+      }
+    }
+
+    function resetCommandState() {
+      thumbOnlyCount = 0;
+      thumbOnlyStartTime = null;
+      thumbOnlyLocked = false;
+      underlinePinchCount = 0;
+      underlinePinchLocked = false;
+      openPalmCount = 0;
+      openPalmStartTime = null;
+      openPalmLocked = false;
+      twoFingerSwipeStart = null;
+      lastSwipeDebug = null;
+      endUnderlineStroke("명령 상태 초기화", performance.now(), false);
+      modeToggleStartTime = null;
+      modeToggleLocked = false;
+      lastCommand = "none";
+      lastCommandTime = 0;
+      updateLastCommandBanner("none", performance.now());
+      resetGestureDebug();
+    }
+
+    function canDispatchCommand(command, now) {
+      return (
+        command !== lastCommand ||
+        now - lastCommandTime >= COMMAND_COOLDOWN_MS
+      );
+    }
+
+    function emitGestureCommand(command, detail, now) {
+      if (!canDispatchCommand(command, now)) {
+        return false;
+      }
+
+      lastCommand = command;
+      lastCommandTime = now;
+      updateLastCommandBanner(command, now);
+      dispatchGestureCommand({
+        command,
+        active: true,
+        source: "target_hand_gesture",
+        micHandLabel,
+        targetHandLabel: getPointerTargetHandLabel(),
+        ...detail
+      });
+      return true;
+    }
+
+    function resetActionCommandCounters() {
+      thumbOnlyCount = 0;
+      thumbOnlyStartTime = null;
+      thumbOnlyLocked = false;
+      underlinePinchCount = 0;
+      underlinePinchLocked = false;
+      endUnderlineStroke("액션 카운터 초기화", performance.now(), false);
+      openPalmCount = 0;
+      openPalmStartTime = null;
+      openPalmLocked = false;
+      twoFingerSwipeStart = null;
+      lastSwipeDebug = null;
+    }
+
+    function setGestureControlEnabled(enabled, now) {
+      gestureControlEnabled = enabled;
+      lastModeToggleTime = now;
+      modeToggleLocked = true;
+      lastCommand = enabled ? "mode_on" : "mode_off";
+      lastCommandTime = now;
+      updateLastCommandBanner(lastCommand, now);
+      resetActionCommandCounters();
+      dispatchPointerOff(enabled ? "제스처 제어 ON" : "제스처 제어 OFF");
+      dispatchGestureCommand({
+        command: "mode_toggle",
+        active: enabled,
+        enabled,
+        source: "pinky_finger_hold",
+        holdMs: MODE_TOGGLE_HOLD_MS,
+        micHandLabel,
+        targetHandLabel: getPointerTargetHandLabel()
+      });
+    }
+
+    function updateModeToggleGesture(gesture, now) {
+      if (gesture.modeToggle) {
+        if (modeToggleStartTime === null) {
+          modeToggleStartTime = now;
+        }
+
+        const holdMs = now - modeToggleStartTime;
+        const cooldownReady = now - lastModeToggleTime >= MODE_TOGGLE_COOLDOWN_MS;
+        if (
+          holdMs >= MODE_TOGGLE_HOLD_MS &&
+          cooldownReady &&
+          !modeToggleLocked
+        ) {
+          setGestureControlEnabled(!gestureControlEnabled, now);
+        }
+        return;
+      }
+
+      modeToggleStartTime = null;
+      modeToggleLocked = false;
+    }
+
+    function updateCommandGestures(
+      hand,
+      rawPointer = null,
+      smoothPoint = null,
+      now,
+      context = null,
+      thresholds = null
+    ) {
+      const poseContext =
+        context || getHandPoseContext(hand, null, rawPointer, now);
+      const adaptiveThresholds =
+        thresholds || getAdaptiveThresholds(poseContext);
+      const gesture = getExclusiveGestureState(
+        getGestureCommandState(hand, poseContext, adaptiveThresholds)
+      );
+      const fallbackPointer = rawPointer || normalizedToScreen(hand[8]);
+      const cameraX = smoothPoint?.x ?? fallbackPointer.x;
+      const cameraY = smoothPoint?.y ?? fallbackPointer.y;
+      const baseDetail = {
+        cameraX,
+        cameraY,
+        rawX: fallbackPointer.x,
+        rawY: fallbackPointer.y
+      };
+      const underlineStart =
+        lastLaserPointer && now - lastLaserPointer.time <= LASER_POINTER_MEMORY_MS
+          ? {
+              cameraX: lastLaserPointer.cameraX,
+              cameraY: lastLaserPointer.cameraY,
+              normalizedX: lastLaserPointer.normalizedX,
+              normalizedY: lastLaserPointer.normalizedY,
+              sourceWidth: canvas.width,
+              sourceHeight: canvas.height,
+              ageMs: Math.round(now - lastLaserPointer.time)
+            }
+          : null;
+      const underlineDetail = {
+        ...baseDetail,
+        underlineMode: "straight_text_line",
+        target: "active_text_anchor",
+        snapToTextLine: true,
+        underlineStart,
+        lineStyle: {
+          color: "#e11d48",
+          width: 4,
+          cap: "round",
+          opacity: 0.95
+        },
+        lineCorrection: {
+          enabled: true,
+          mode: "straightened_underbar",
+          description: "손떨림으로 생기는 상하 흔들림을 줄여 밑줄을 반듯한 직선으로 렌더링"
+        }
+      };
+
+      updateModeToggleGesture(gesture, now);
+
+      if (gesture.modeToggle) {
+        resetActionCommandCounters();
+        return gesture;
+      }
+
+      if (!gestureControlEnabled) {
+        resetActionCommandCounters();
+        return {
+          ...gesture,
+          thumbOnly: false,
+          underlinePinch: false,
+          twoFingerSwipeReady: false,
+          openPalm: false,
+          exclusiveMode: "disabled",
+          confidence: 0,
+          blockedReason: "제스처 제어 OFF",
+          blocksPointer: false
+        };
+      }
+
+      if (gesture.thumbOnly) {
+        thumbOnlyCount++;
+        if (thumbOnlyStartTime === null) {
+          thumbOnlyStartTime = now;
+        }
+      } else {
+        thumbOnlyCount = 0;
+        thumbOnlyStartTime = null;
+        thumbOnlyLocked = false;
+      }
+
+      if (gesture.underlinePinch) {
+        underlinePinchCount++;
+      } else if (!underlineStrokeActive) {
+        underlinePinchCount = 0;
+        underlinePinchLocked = false;
+      } else {
+        underlinePinchCount = 0;
+      }
+
+      if (gesture.openPalm) {
+        openPalmCount++;
+        if (openPalmStartTime === null) {
+          openPalmStartTime = now;
+        }
+      } else {
+        openPalmCount = 0;
+        openPalmStartTime = null;
+        openPalmLocked = false;
+      }
+
+      const thumbOnlyHoldMs =
+        thumbOnlyStartTime === null ? 0 : now - thumbOnlyStartTime;
+
+      if (
+        gesture.thumbOnly &&
+        thumbOnlyHoldMs >= PREVIOUS_PAGE_HOLD_MS &&
+        !thumbOnlyLocked
+      ) {
+        if (
+          emitGestureCommand(
+            "previous_page",
+            {
+              ...baseDetail,
+              holdMs: Math.round(thumbOnlyHoldMs)
+            },
+            now
+          )
+        ) {
+          thumbOnlyLocked = true;
+        }
+      }
+
+      updateUnderlineStrokeBridge(
+        gesture,
+        {
+          cameraX,
+          cameraY,
+          rawX: fallbackPointer.x,
+          rawY: fallbackPointer.y
+        },
+        underlineDetail,
+        now
+      );
+
+      const openPalmHoldMs =
+        openPalmStartTime === null ? 0 : now - openPalmStartTime;
+
+      if (
+        gesture.openPalm &&
+        openPalmHoldMs >= OPEN_PALM_HOLD_MS &&
+        !openPalmLocked
+      ) {
+        if (
+          emitGestureCommand(
+            "clear_page",
+            {
+              ...baseDetail,
+              holdMs: Math.round(openPalmHoldMs),
+              scope: "current_page"
+            },
+            now
+          )
+        ) {
+          openPalmLocked = true;
+            clearUnderlineStrokes("clear_page 제스처 실행");
+        }
+      }
+
+      if (gesture.twoFingerSwipeReady) {
+        const middlePoint = normalizedToScreen(hand[12]);
+        const swipePoint = {
+          x: (fallbackPointer.x + middlePoint.x) / 2,
+          y: (fallbackPointer.y + middlePoint.y) / 2
+        };
+
+        if (!twoFingerSwipeStart) {
+          twoFingerSwipeStart = {
+            x: swipePoint.x,
+            y: swipePoint.y,
+            time: now
+          };
+          lastSwipeDebug = {
+            startX: swipePoint.x,
+            startY: swipePoint.y,
+            currentX: swipePoint.x,
+            currentY: swipePoint.y,
+            deltaX: 0,
+            deltaY: 0
+          };
+        } else {
+          const deltaX = swipePoint.x - twoFingerSwipeStart.x;
+          const deltaY = swipePoint.y - twoFingerSwipeStart.y;
+          lastSwipeDebug = {
+            startX: twoFingerSwipeStart.x,
+            startY: twoFingerSwipeStart.y,
+            currentX: swipePoint.x,
+            currentY: swipePoint.y,
+            deltaX,
+            deltaY
+          };
+
+          if (
+            Math.abs(deltaX) >= adaptiveThresholds.swipeMinDistance &&
+            Math.abs(deltaY) <= adaptiveThresholds.swipeMaxVerticalDrift
+          ) {
+            emitGestureCommand(
+              "next_page",
+              {
+                ...baseDetail,
+                deltaX,
+                deltaY,
+                direction: deltaX > 0 ? "right" : "left"
+              },
+              now
+            );
+            twoFingerSwipeStart = null;
+            lastSwipeDebug = {
+              ...lastSwipeDebug,
+              fired: true
+            };
+          }
+        }
+      } else {
+        twoFingerSwipeStart = null;
+        lastSwipeDebug = null;
+      }
+
+      return gesture;
+    }
+
+    function drawPointer(x, y) {
+      clearCanvas();
+      drawUnderlineStrokes();
+
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+
+      // 발표 화면에서 위치는 잘 보이되 글자를 덜 가리도록
+      // 중심점은 유지하고 주변 광번짐만 약하게 줄인다.
+      const outerGlowRadius = 18;
+      const middleGlowRadius = 10;
+      const coreRadius = 5.4;
+      const innerCoreRadius = 2.8;
+      const highlightRadius = 1.05;
+
+      ctx.beginPath();
+      ctx.arc(x, y, outerGlowRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255, 0, 0, 0.045)";
+      ctx.shadowColor = "rgba(255, 0, 0, 0.42)";
+      ctx.shadowBlur = 16;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, middleGlowRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255, 0, 0, 0.105)";
+      ctx.shadowBlur = 10;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, coreRadius, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255, 0, 0, 0.38)";
+      ctx.shadowBlur = 6;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, innerCoreRadius, 0, Math.PI * 2);
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = "#ff0000";
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x - 0.9, y - 0.9, highlightRadius, 0, Math.PI * 2);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function detectHands() {
+      if (!isRunning || !handLandmarker) return;
+
+      const now = performance.now();
+
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        finishCalibrationIfNeeded(now);
+
+        const handResult = handLandmarker.detectForVideo(video, now);
+        const targetHandInfo = getTargetHand(handResult);
+
+        if (!targetHandInfo.hand) {
+          lostHandFrames++;
+          const lostDisplayFrames = lostHandFrames;
+          const isHoldingPointer =
+            pointerActive && lostHandFrames < REQUIRED_LOST_FRAMES;
+          resetGestureDebug(targetHandInfo.reason);
+
+          if (lostHandFrames >= REQUIRED_LOST_FRAMES) {
+            redrawOverlay();
+            resetSmoothing();
+            indexExtendedCount = 0;
+            indexFoldedCount = 0;
+            pointerActive = false;
+            resetCommandState();
+            dispatchPointerOff(targetHandInfo.reason);
+          }
+
+          setOutput(
+`${isHoldingPointer ? "포인터 유지 중" : "포인터 OFF"}
+
+이유:
+${targetHandInfo.reason}
+
+손 사라짐 프레임:
+${lostDisplayFrames} / ${REQUIRED_LOST_FRAMES}
+
+순간 인식 튐 보정:
+${isHoldingPointer ? "잠깐 사라진 상태라 아직 OFF 처리하지 않음" : "OFF 처리됨"}
+
+Hand 인식 개수:
+${handResult.landmarks?.length || 0}
+
+마이크 손:
+${micHandLabel}
+
+포인터 인식 대상 손:
+${targetHandInfo.targetHandLabel}
+
+좌우 반전 보정:
+${reverseHandLabel ? "ON" : "OFF"}
+
+힌트:
+마이크 손을 선택하면 반대 손만 포인터로 인식합니다.
+실제 손 방향이 반대로 잡히면 좌우 반전 보정을 켜세요.`
+          );
+
+          animationFrameId = requestAnimationFrame(detectHands);
+          return;
+        }
+
+        lostHandFrames = 0;
+
+        finishCalibrationIfNeeded(now);
+
+        const hand = targetHandInfo.hand;
+        const indexFingerTip = hand[8];
+        const rawPointer = normalizedToScreen(indexFingerTip);
+        const handPoseContext = getHandPoseContext(
+          hand,
+          targetHandInfo,
+          rawPointer,
+          now
+        );
+        const adaptiveThresholds = getAdaptiveThresholds(handPoseContext);
+        const indexState = isIndexFingerExtended(hand, adaptiveThresholds);
+        const pointerQualityAllowed =
+          adaptiveThresholds.pointerAllowed &&
+          !handPoseContext.lowConfidence &&
+          !handPoseContext.partialHand;
+        const gestureState = updateIndexGestureState(
+          indexState.extended && pointerQualityAllowed
+        );
+        const commandGesture = updateCommandGestures(
+          hand,
+          rawPointer,
+          null,
+          now,
+          handPoseContext,
+          adaptiveThresholds
+        );
+        collectCalibrationSample(hand, handPoseContext, commandGesture);
+        finishCalibrationIfNeeded(now);
+        updateGestureDebug(commandGesture, gestureState, now);
+        const shouldShowPointer =
+          gestureControlEnabled &&
+          gestureState.pointerActive &&
+          !commandGesture.blocksPointer &&
+          pointerQualityAllowed;
+
+        if (!shouldShowPointer) {
+          redrawOverlay();
+          resetSmoothing();
+          dispatchPointerOff(
+            commandGesture.blocksPointer
+              ? `${getCommandLabel(commandGesture.exclusiveMode)} 제스처 우선`
+              : !gestureControlEnabled
+              ? "제스처 제어 OFF"
+              : !pointerQualityAllowed
+              ? commandGesture.candidates.pointer.blockedBy || "포인터 품질 낮음"
+              : "검지가 포인터 ON 기준을 만족하지 않음"
+          );
+
+          setOutput(
+`포인터 OFF
+
+이유:
+${commandGesture.blocksPointer ? `${getCommandLabel(commandGesture.exclusiveMode)} 제스처가 포인터보다 우선됨` : !gestureControlEnabled ? "제스처 제어 OFF: 새끼손가락 0.7초 유지로 켜기" : !pointerQualityAllowed ? `포인터 보류: ${commandGesture.candidates.pointer.blockedBy || "품질 낮음"}` : `검지가 ${REQUIRED_ON_FRAMES}프레임 연속 펴지지 않음`}
+
+현재 프레임 검지 판정:
+${indexState.extended ? "펴짐" : "접힘"}
+
+연속 펴짐 프레임:
+${gestureState.indexExtendedCount} / ${REQUIRED_ON_FRAMES}
+
+연속 접힘 프레임:
+${gestureState.indexFoldedCount} / ${REQUIRED_OFF_FRAMES}
+
+Hand 인식 개수:
+${handResult.landmarks?.length || 0}
+
+마이크 손:
+${micHandLabel}
+
+포인터 인식 대상 손:
+${targetHandInfo.targetHandLabel}
+
+좌우 반전 보정:
+${reverseHandLabel ? "ON" : "OFF"}
+
+선택된 손:
+${targetHandInfo.label}
+
+선택 신뢰도:
+${targetHandInfo.score ? targetHandInfo.score.toFixed(3) : "N/A"}
+
+선택 이유:
+${targetHandInfo.reason}
+
+검지 각도:
+anglePIP: ${indexState.angle1.toFixed(1)}
+angleDIP: ${indexState.angle2.toFixed(1)}
+
+거리 조건:
+wristToTip: ${indexState.wristToTip.toFixed(4)}
+wristToPip: ${indexState.wristToPip.toFixed(4)}
+wristToDip: ${indexState.wristToDip.toFixed(4)}
+
+각도 조건 통과:
+${indexState.angleCondition ? "YES" : "NO"}
+
+거리 조건 통과:
+${indexState.distanceCondition ? "YES" : "NO"}
+
+현재 기준:
+adaptive angleThreshold: ${commandGesture.thresholds.angleThreshold.toFixed(1)}
+adaptive touchRatio: ${commandGesture.thresholds.touchDistanceRatio.toFixed(3)}
+adaptive swipeMinDistance: ${commandGesture.thresholds.swipeMinDistance.toFixed(1)} px
+adaptive swipeMaxVerticalDrift: ${commandGesture.thresholds.swipeMaxVerticalDrift.toFixed(1)} px
+REQUIRED_LOST_FRAMES: ${REQUIRED_LOST_FRAMES}
+
+손 자세 보정:
+palmSizePx: ${commandGesture.context.palmSizePx.toFixed(1)}
+referencePalmSizePx: ${commandGesture.context.referencePalmSizePx.toFixed(1)}
+distanceScale: ${commandGesture.context.distanceScale.toFixed(2)}
+tooFarForPointer: ${commandGesture.context.tooFarForPointer ? "YES" : "NO"}
+tooFarForCommands: ${commandGesture.context.tooFarForCommands ? "YES" : "NO"}
+palmFacingScore: ${commandGesture.context.palmFacingScore.toFixed(2)}
+stabilityScore: ${commandGesture.context.stabilityScore.toFixed(2)}
+inFrameRatio: ${commandGesture.context.inFrameRatio.toFixed(2)}
+blockedReason: ${commandGesture.blockedReason || "없음"}
+
+제스처 명령 상태:
+exclusiveMode: ${commandGesture.exclusiveMode}
+confidence: ${commandGesture.confidence.toFixed(2)}
+blocksPointer: ${commandGesture.blocksPointer ? "YES" : "NO"}
+gestureControlEnabled: ${gestureControlEnabled ? "ON" : "OFF"}
+raw pinkyOnly(mode_toggle): ${commandGesture.rawPinkyOnly ? "YES" : "NO"}
+modeToggle: ${commandGesture.modeToggle ? "YES" : "NO"} (${modeToggleStartTime === null ? 0 : Math.round(now - modeToggleStartTime)} / ${MODE_TOGGLE_HOLD_MS} ms)
+raw thumbOnly(previous_page): ${commandGesture.rawThumbOnly ? "YES" : "NO"}
+thumbScore/thumbAngle: ${commandGesture.thumbScore?.toFixed(2) ?? "N/A"} / ${commandGesture.thumbAngle?.toFixed(1) ?? "N/A"}
+thumbIntent/closedFist/tucked/openCount: ${commandGesture.thumbGestureIntent ? "YES" : "NO"} / ${commandGesture.closedFistLike ? "YES" : "NO"} / ${commandGesture.tuckedThumbFistLike ? "YES" : "NO"} / ${commandGesture.nonThumbOpenCount ?? "N/A"}
+thumb clear/nearPalm: ${commandGesture.thumbClearOfPalmScore?.toFixed(2) ?? "N/A"} / ${commandGesture.thumbNearestFingerPipRatio?.toFixed(2) ?? "N/A"}
+thumbOnly(previous_page): ${commandGesture.thumbOnly ? "YES" : "NO"} (${thumbOnlyStartTime === null ? 0 : Math.round(now - thumbOnlyStartTime)} / ${PREVIOUS_PAGE_HOLD_MS} ms, frames ${thumbOnlyCount}, lock ${thumbOnlyLocked ? "LOCKED" : "READY"})
+raw thumb+index touch(underline): ${commandGesture.rawUnderlinePinch ? "YES" : "NO"}
+thumb+index touch(underline): ${commandGesture.underlinePinch ? "YES" : "NO"} (${underlinePinchCount} / ${REQUIRED_COMMAND_FRAMES})
+underline lock: ${underlinePinchLocked ? "LOCKED" : "READY"}
+underline bridge state: ${lastUnderlineDebug.state} / ${lastUnderlineDebug.reason}
+underline gap/bridge/points: ${lastUnderlineDebug.gapMs}ms / ${Math.round(lastUnderlineDebug.bridgeDistance || 0)}px (max ${Math.round(getUnderlineBridgeMaxDistance())}px) / ${lastUnderlineDebug.points || 0}
+raw index+middle touch swipe(next_page): ${commandGesture.rawTwoFingerSwipeReady ? "YES" : "NO"}
+intentional index+middle touch: ${commandGesture.intentionalIndexMiddleTouch ? "YES" : "NO"}
+index+middle touch swipe(next_page): ${commandGesture.twoFingerSwipeReady ? "READY" : "NO"}
+index/middle command score: ${commandGesture.indexScore.toFixed(2)} / ${commandGesture.middleScore.toFixed(2)}
+ring/pinky command score: ${commandGesture.ringScore.toFixed(2)} / ${commandGesture.pinkyScore.toFixed(2)}
+swipe start: ${lastSwipeDebug ? `${lastSwipeDebug.startX.toFixed(1)}, ${lastSwipeDebug.startY.toFixed(1)}` : "N/A"}
+swipe current: ${lastSwipeDebug ? `${lastSwipeDebug.currentX.toFixed(1)}, ${lastSwipeDebug.currentY.toFixed(1)}` : "N/A"}
+swipe deltaX: ${lastSwipeDebug ? lastSwipeDebug.deltaX.toFixed(1) : "N/A"} px
+swipe deltaY: ${lastSwipeDebug ? lastSwipeDebug.deltaY.toFixed(1) : "N/A"} px
+raw openPalm(clear_page): ${commandGesture.rawOpenPalm ? "YES" : "NO"}
+openPalm(clear_page): ${commandGesture.openPalm ? "YES" : "NO"} (${openPalmCount} frames)
+openPalm hold: ${openPalmStartTime === null ? 0 : Math.round(now - openPalmStartTime)} / ${OPEN_PALM_HOLD_MS} ms
+clear_page lock: ${openPalmLocked ? "LOCKED" : "READY"}
+lastCommand: ${lastCommand}`
+          );
+
+          animationFrameId = requestAnimationFrame(detectHands);
+          return;
+        }
+
+        const smoothPoint = getSmoothedPoint(rawPointer.x, rawPointer.y);
+        const cameraX = smoothPoint.x;
+        const cameraY = smoothPoint.y;
+
+        drawPointer(cameraX, cameraY);
+        lastLaserPointer = {
+          cameraX,
+          cameraY,
+          normalizedX: cameraX / Math.max(canvas.width, 1),
+          normalizedY: cameraY / Math.max(canvas.height, 1),
+          time: now
+        };
+
+        if (!lastPointerEventActive) {
+          lastCommand = "pointer_on";
+          lastCommandTime = now;
+          updateLastCommandBanner(lastCommand, now);
+          dispatchGestureCommand({
+            command: "pointer_on",
+            active: true,
+            source: "index_finger_extended",
+            cameraX,
+            cameraY
+          });
+        }
+
+        lastPointerEventActive = true;
+        dispatchPointerUpdate({
+          active: true,
+          cameraX,
+          cameraY,
+          rawX: rawPointer.x,
+          rawY: rawPointer.y,
+          smoothX: smoothPoint.x,
+          smoothY: smoothPoint.y,
+          handLabel: targetHandInfo.label,
+          confidence: targetHandInfo.score,
+          micHandLabel,
+          targetHandLabel: targetHandInfo.targetHandLabel
+        });
+
+        setOutput(
+`포인터 ON
+
+이유:
+검지가 ${REQUIRED_ON_FRAMES}프레임 연속 펴짐
+
+현재 프레임 검지 판정:
+${indexState.extended ? "펴짐" : "접힘"}
+
+연속 펴짐 프레임:
+${gestureState.indexExtendedCount} / ${REQUIRED_ON_FRAMES}
+
+연속 접힘 프레임:
+${gestureState.indexFoldedCount} / ${REQUIRED_OFF_FRAMES}
+
+Hand 인식 개수:
+${handResult.landmarks?.length || 0}
+
+마이크 손:
+${micHandLabel}
+
+포인터 인식 대상 손:
+${targetHandInfo.targetHandLabel}
+
+좌우 반전 보정:
+${reverseHandLabel ? "ON" : "OFF"}
+
+선택된 손:
+${targetHandInfo.label}
+
+선택 신뢰도:
+${targetHandInfo.score ? targetHandInfo.score.toFixed(3) : "N/A"}
+
+선택 이유:
+${targetHandInfo.reason}
+
+검지 각도:
+anglePIP: ${indexState.angle1.toFixed(1)}
+angleDIP: ${indexState.angle2.toFixed(1)}
+
+각도 조건 통과:
+${indexState.angleCondition ? "YES" : "NO"}
+
+거리 조건 통과:
+${indexState.distanceCondition ? "YES" : "NO"}
+
+제스처 명령 상태:
+exclusiveMode: ${commandGesture.exclusiveMode}
+confidence: ${commandGesture.confidence.toFixed(2)}
+blocksPointer: ${commandGesture.blocksPointer ? "YES" : "NO"}
+gestureControlEnabled: ${gestureControlEnabled ? "ON" : "OFF"}
+raw pinkyOnly(mode_toggle): ${commandGesture.rawPinkyOnly ? "YES" : "NO"}
+modeToggle: ${commandGesture.modeToggle ? "YES" : "NO"} (${modeToggleStartTime === null ? 0 : Math.round(now - modeToggleStartTime)} / ${MODE_TOGGLE_HOLD_MS} ms)
+blockedReason: ${commandGesture.blockedReason || "없음"}
+adaptive angleThreshold: ${commandGesture.thresholds.angleThreshold.toFixed(1)}
+adaptive touchRatio: ${commandGesture.thresholds.touchDistanceRatio.toFixed(3)}
+adaptive swipeMinDistance: ${commandGesture.thresholds.swipeMinDistance.toFixed(1)} px
+pointerAllowed: ${commandGesture.thresholds.pointerAllowed ? "YES" : "NO"}
+palmFacingScore: ${commandGesture.context.palmFacingScore.toFixed(2)}
+distanceScale: ${commandGesture.context.distanceScale.toFixed(2)}
+tooFarForPointer: ${commandGesture.context.tooFarForPointer ? "YES" : "NO"}
+tooFarForCommands: ${commandGesture.context.tooFarForCommands ? "YES" : "NO"}
+stabilityScore: ${commandGesture.context.stabilityScore.toFixed(2)}
+inFrameRatio: ${commandGesture.context.inFrameRatio.toFixed(2)}
+raw thumbOnly(previous_page): ${commandGesture.rawThumbOnly ? "YES" : "NO"}
+thumbScore/thumbAngle: ${commandGesture.thumbScore?.toFixed(2) ?? "N/A"} / ${commandGesture.thumbAngle?.toFixed(1) ?? "N/A"}
+thumbIntent/closedFist/tucked/openCount: ${commandGesture.thumbGestureIntent ? "YES" : "NO"} / ${commandGesture.closedFistLike ? "YES" : "NO"} / ${commandGesture.tuckedThumbFistLike ? "YES" : "NO"} / ${commandGesture.nonThumbOpenCount ?? "N/A"}
+thumb clear/nearPalm: ${commandGesture.thumbClearOfPalmScore?.toFixed(2) ?? "N/A"} / ${commandGesture.thumbNearestFingerPipRatio?.toFixed(2) ?? "N/A"}
+thumbOnly(previous_page): ${commandGesture.thumbOnly ? "YES" : "NO"} (${thumbOnlyStartTime === null ? 0 : Math.round(now - thumbOnlyStartTime)} / ${PREVIOUS_PAGE_HOLD_MS} ms, frames ${thumbOnlyCount}, lock ${thumbOnlyLocked ? "LOCKED" : "READY"})
+raw thumb+index touch(underline): ${commandGesture.rawUnderlinePinch ? "YES" : "NO"}
+thumb+index touch(underline): ${commandGesture.underlinePinch ? "YES" : "NO"} (${underlinePinchCount} / ${REQUIRED_COMMAND_FRAMES})
+underline lock: ${underlinePinchLocked ? "LOCKED" : "READY"}
+underline bridge state: ${lastUnderlineDebug.state} / ${lastUnderlineDebug.reason}
+underline gap/bridge/points: ${lastUnderlineDebug.gapMs}ms / ${Math.round(lastUnderlineDebug.bridgeDistance || 0)}px (max ${Math.round(getUnderlineBridgeMaxDistance())}px) / ${lastUnderlineDebug.points || 0}
+raw index+middle touch swipe(next_page): ${commandGesture.rawTwoFingerSwipeReady ? "YES" : "NO"}
+intentional index+middle touch: ${commandGesture.intentionalIndexMiddleTouch ? "YES" : "NO"}
+index+middle touch swipe(next_page): ${commandGesture.twoFingerSwipeReady ? "READY" : "NO"}
+index/middle command score: ${commandGesture.indexScore.toFixed(2)} / ${commandGesture.middleScore.toFixed(2)}
+ring/pinky command score: ${commandGesture.ringScore.toFixed(2)} / ${commandGesture.pinkyScore.toFixed(2)}
+swipe start: ${lastSwipeDebug ? `${lastSwipeDebug.startX.toFixed(1)}, ${lastSwipeDebug.startY.toFixed(1)}` : "N/A"}
+swipe current: ${lastSwipeDebug ? `${lastSwipeDebug.currentX.toFixed(1)}, ${lastSwipeDebug.currentY.toFixed(1)}` : "N/A"}
+swipe deltaX: ${lastSwipeDebug ? lastSwipeDebug.deltaX.toFixed(1) : "N/A"} px
+swipe deltaY: ${lastSwipeDebug ? lastSwipeDebug.deltaY.toFixed(1) : "N/A"} px
+raw openPalm(clear_page): ${commandGesture.rawOpenPalm ? "YES" : "NO"}
+openPalm(clear_page): ${commandGesture.openPalm ? "YES" : "NO"} (${openPalmCount} frames)
+openPalm hold: ${openPalmStartTime === null ? 0 : Math.round(now - openPalmStartTime)} / ${OPEN_PALM_HOLD_MS} ms
+clear_page lock: ${openPalmLocked ? "LOCKED" : "READY"}
+lastCommand: ${lastCommand}
+
+검지 정규화 좌표:
+x: ${indexFingerTip.x.toFixed(4)}
+y: ${indexFingerTip.y.toFixed(4)}
+z: ${indexFingerTip.z.toFixed(4)}
+
+카메라 원본 화면 좌표:
+rawX: ${rawPointer.x.toFixed(1)} px
+rawY: ${rawPointer.y.toFixed(1)} px
+
+카메라 보정 좌표:
+cameraX: ${cameraX.toFixed(1)} px
+cameraY: ${cameraY.toFixed(1)} px
+smoothX: ${smoothPoint.x.toFixed(1)} px
+smoothY: ${smoothPoint.y.toFixed(1)} px
+
+이동 거리:
+${smoothPoint.distance.toFixed(1)} px
+
+보정 강도:
+${smoothPoint.smoothing}`
+        );
+      }
+
+      animationFrameId = requestAnimationFrame(detectHands);
+    }
+
+    function cleanupCameraRuntime() {
+      isRunning = false;
+
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+
+      if (webcamStream) {
+        webcamStream.getTracks().forEach((track) => track.stop());
+        webcamStream = null;
+      }
+
+      video.srcObject = null;
+      lastVideoTime = -1;
+      clearUnderlineStrokes("카메라 런타임 초기화");
+      clearCanvas();
+      resetSmoothing();
+      resetGestureState();
+      dispatchPointerOff("카메라 런타임 초기화");
+    }
+
+    function showRetryButton() {
+      retryButton.style.display = "inline-block";
+      retryButton.disabled = false;
+    }
+
+    function hideRetryButton() {
+      retryButton.style.display = "none";
+      retryButton.disabled = true;
+    }
+
+    async function main() {
+      try {
+        hideRetryButton();
+        cleanupCameraRuntime();
+
+        if (!handLandmarker) {
+          await initMediaPipe();
+        }
+
+        await initWebcam();
+
+        isRunning = true;
+        resetGestureState();
+        resetSmoothing();
+        dispatchPointerOff("카메라 시작 전 초기화");
+
+        statusEl.textContent = "검지 3프레임 판정 포인터 실행 중...";
+        detectHands();
+      } catch (error) {
+        console.error(error);
+
+        cleanupCameraRuntime();
+        showRetryButton();
+        statusEl.textContent = "오류 발생";
+
+        if (error.name === "NotReadableError") {
+          setOutput(
+            "카메라가 다른 프로그램에서 사용 중입니다.\nZoom, OBS, 카카오톡, Meet, 다른 브라우저 탭을 종료하고 다시 실행하세요.",
+            true
+          );
+        } else if (error.name === "NotAllowedError") {
+          setOutput(
+            "카메라 권한이 거부되었습니다.\n브라우저 주소창 왼쪽에서 카메라 권한을 허용하세요.",
+            true
+          );
+        } else if (error.name === "NotFoundError") {
+          setOutput(
+            "카메라 장치를 찾을 수 없습니다.\n웹캠 연결 상태를 확인하세요.",
+            true
+          );
+        } else {
+          setOutput(error.name + "\n" + error.message, true);
+        }
+      }
+    }
+
+    document.querySelectorAll("input[name='micHand']").forEach((input) => {
+      input.addEventListener("change", (event) => {
+        micHandLabel = event.target.value;
+        updateHandConfigText();
+        resetGestureState();
+        resetSmoothing();
+        clearCanvas();
+        dispatchPointerOff("마이크 손 설정 변경");
+      });
+    });
+
+    reverseHandLabelEl.addEventListener("change", (event) => {
+      reverseHandLabel = event.target.checked;
+      updateHandConfigText();
+      resetGestureState();
+      resetSmoothing();
+      clearCanvas();
+      dispatchPointerOff("좌우 반전 보정 변경");
+    });
+
+    calibrateButton.addEventListener("click", startCalibration);
+
+    retryButton.addEventListener("click", main);
+
+    updateHandConfigText();
+    updateCalibrationStatus();
+    main();
+  </script>
+</body>
+</html>
