@@ -1,7 +1,7 @@
-document.addEventListener("DOMContentLoaded", () => {
+﻿document.addEventListener("DOMContentLoaded", () => {
   const video = document.getElementById("webcamVideo");
   const handStatusText = document.getElementById("handStatusText");
-  const annotationCanvas = document.getElementById("annotationCanvas");
+  const annotationCanvas = document.getElementById("drawCanvas") || document.getElementById("annotationCanvas");
   const cameraView = video?.closest(".camera-view");
 
   let HandLandmarker = null;
@@ -16,8 +16,12 @@ document.addEventListener("DOMContentLoaded", () => {
   let lostHandFrames = 0;
   let lastThumbPrevAt = 0;
   let pinchStartPoint = null;
+  let underlineStartedAt = null;
+  let underlineGestureLocked = false;
   let palmOpenStartedAt = null;
   let clearGestureLocked = false;
+  let gestureEnabled = true;
+  let connectionState = { connected: false, label: "OFF", percent: 0, color: "red", reason: "연결 필요" };
 
   const MEDIAPIPE_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
   const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
@@ -29,6 +33,27 @@ document.addEventListener("DOMContentLoaded", () => {
   const DISTANCE_RATIO_PIP = 1.08;
   const DISTANCE_RATIO_DIP = 1.02;
   const SMOOTHING = 0.72;
+
+  function publishConnectionState(nextState = {}) {
+    connectionState = { ...connectionState, ...nextState };
+    window.AirNoteWebcamState = connectionState;
+    window.dispatchEvent(new CustomEvent("airnote:webcam-state", { detail: connectionState }));
+    const cameraCard = video?.closest(".camera-card");
+    const headerState = cameraCard?.querySelector(".card-title span");
+    if (headerState) {
+      headerState.textContent = connectionState.label;
+      headerState.style.color = connectionState.connected ? "#22c55e" : "#ef4444";
+    }
+    cameraView?.classList.toggle("is-connected", connectionState.connected);
+    cameraView?.classList.toggle("is-disconnected", !connectionState.connected);
+  }
+
+  function getCameraErrorMessage(error) {
+    if (error?.name === "NotAllowedError") return "카메라 권한 거부";
+    if (error?.name === "NotFoundError") return "카메라 장치 없음";
+    if (error?.name === "NotReadableError") return "다른 프로그램에서 카메라 사용 중";
+    return "카메라 연결 실패";
+  }
 
   function setStatus(message) {
     if (handStatusText) handStatusText.textContent = message;
@@ -53,6 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) {
       console.error("MediaPipe CDN import failed.", error);
       setStatus("MediaPipe \uB85C\uB529 \uC2E4\uD328");
+      publishConnectionState({ connected: false, label: "OFF", percent: 0, color: "red", reason: "MediaPipe 로딩 실패" });
       return false;
     }
   }
@@ -84,6 +110,7 @@ document.addEventListener("DOMContentLoaded", () => {
       } catch (cpuError) {
         console.error("MediaPipe CPU init failed.", cpuError);
         setStatus("MediaPipe \uB85C\uB529 \uC2E4\uD328");
+        publishConnectionState({ connected: false, label: "OFF", percent: 0, color: "red", reason: "MediaPipe 로딩 실패" });
         return false;
       }
     }
@@ -98,7 +125,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      setStatus("\uCE74\uBA54\uB77C \uAD8C\uD55C\uC744 \uD5C8\uC6A9\uD574\uC8FC\uC138\uC694.");
+      setStatus("브라우저 카메라 미지원");
+      publishConnectionState({ connected: false, label: "OFF", percent: 0, color: "red", reason: "브라우저 미지원" });
       return false;
     }
 
@@ -110,10 +138,13 @@ document.addEventListener("DOMContentLoaded", () => {
       cameraView?.classList.add("has-video");
       await video.play().catch(() => undefined);
       setStatus("\uC190 \uC778\uC2DD \uB300\uAE30 \uC911");
+      publishConnectionState({ connected: true, label: "ON", percent: 100, color: "green", reason: "정상 연결" });
       return true;
     } catch (error) {
       console.warn("handPointer: webcam init failed.", error);
-      setStatus("\uCE74\uBA54\uB77C \uAD8C\uD55C\uC744 \uD5C8\uC6A9\uD574\uC8FC\uC138\uC694.");
+      const message = getCameraErrorMessage(error);
+      setStatus(message);
+      publishConnectionState({ connected: false, label: "OFF", percent: 0, color: "red", reason: message });
       return false;
     }
   }
@@ -202,6 +233,13 @@ document.addEventListener("DOMContentLoaded", () => {
     return Math.hypot(dx, dy) < 0.055;
   }
 
+  function isThumbIndexPinched(landmarks) {
+    if (!landmarks?.[4] || !landmarks?.[8]) return false;
+    const dx = landmarks[4].x - landmarks[8].x;
+    const dy = landmarks[4].y - landmarks[8].y;
+    return Math.hypot(dx, dy) < 0.06;
+  }
+
   function updateIndexGestureState(isExtended) {
     if (isExtended) {
       extendedFrameCount += 1;
@@ -250,9 +288,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function handleOptionalGestures(landmarks, point) {
     const api = getPresentationApi();
-    if (!api) return;
+    if (!api || !gestureEnabled) return;
 
     const now = performance.now();
+
+    if (isThumbIndexPinched(landmarks)) {
+      if (!underlineStartedAt) underlineStartedAt = now;
+      if (!underlineGestureLocked && now - underlineStartedAt >= 300) {
+        const handled = api.drawUnderlineForActiveAnchor?.() || api.handleGestureCommand?.("underline");
+        if (handled) setStatus("텍스트 밑줄 표시");
+        underlineGestureLocked = true;
+      }
+    } else {
+      underlineStartedAt = null;
+      underlineGestureLocked = false;
+    }
 
     if (isThumbOnlyExtended(landmarks) && now - lastThumbPrevAt > 1400) {
       api.prevPage?.();
@@ -351,6 +401,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function bootHandPointer() {
     if (!video || !annotationCanvas) {
       console.warn("handPointer: required elements are missing.");
+      publishConnectionState({ connected: false, label: "OFF", percent: 0, color: "red", reason: "연결 필요" });
       return;
     }
 
@@ -369,6 +420,11 @@ document.addEventListener("DOMContentLoaded", () => {
     initMediaPipe,
     initWebcam,
     detectHands,
+    setGestureEnabled: (enabled) => {
+      gestureEnabled = Boolean(enabled);
+      setStatus(gestureEnabled ? "제스처 인식 ON" : "제스처 인식 OFF");
+    },
+    getConnectionState: () => connectionState,
     isIndexFingerExtended,
     updateIndexGestureState,
     getSmoothedPoint,

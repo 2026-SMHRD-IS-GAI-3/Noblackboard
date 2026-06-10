@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AirNote - 발표 진행</title>
-    <link rel="stylesheet" href="../css/styles.css" />
+    <link rel="stylesheet" href="../css/styles.css?v=airnote-text-fix" />
   </head>
   <body>
     <main class="app-layout presentation-page">
@@ -16,9 +16,9 @@
           <h1>AirNote</h1>
         </a>
         <nav>
-          <a href="home.html"><span class="menu-icon menu-icon-home" aria-hidden="true"></span>홈화면</a>
-          <a class="active" href="presentation.html"><span class="menu-icon menu-icon-play" aria-hidden="true"></span>발표 진행</a>
-          <a href="mypage.html"><span class="menu-icon menu-icon-user" aria-hidden="true"></span>마이페이지</a>
+          <a href="home.html"><span class="menu-emoji icon-mask icon-sidebar-home" aria-hidden="true"></span>홈화면</a>
+          <a class="active" href="presentation.html"><span class="menu-emoji icon-mask icon-sidebar-presentation" aria-hidden="true"></span>발표 진행</a>
+          <a href="mypage.html"><span class="menu-emoji icon-mask icon-sidebar-mypage" aria-hidden="true"></span>마이페이지</a>
         </nav>
         <section class="guide-card">
           <h2>발표 진행 가이드</h2>
@@ -29,12 +29,13 @@
       <section class="workspace">
         <header class="topbar compact">
           <span></span>
-          <div class="profile">L</div>
+          <a class="profile" href="mypage.html" aria-label="마이페이지">L</a>
+          <a class="logout-link" href="../index.html"><span class="logout-icon icon-mask icon-logout" aria-hidden="true"></span>로그아웃</a>
         </header>
         <section class="present-grid">
           <div class="slide-column">
             <section class="slide-card">
-              <div class="slide-art" id="slideArt">
+              <div class="slide-art presentation-stage" id="slideArt">
                 <span class="leaf"></span>
                 <span class="target"></span>
                 <h3>01</h3>
@@ -42,27 +43,41 @@
                 <p>AI 기반 제스처 인식 발표 보조 시스템</p>
                 <b>AirNote</b>
                 <canvas id="pdfCanvas" aria-label="PDF page canvas"></canvas>
-                <canvas id="annotationCanvas" aria-label="슬라이드 판서 영역"></canvas>
-                <canvas id="pointerCanvas" aria-label="손 포인터 표시 영역"></canvas>
+                <canvas id="drawCanvas" aria-label="슬라이드 판서 영역"></canvas>
+                <div id="laserPointer" aria-hidden="true"></div>
+                <div class="selected-pdf-label" id="selectedPdfLabel" aria-live="polite"></div>
               </div>
               <div class="slide-toolbar">
                 <button id="prevPageBtn" type="button">이전 슬라이드</button>
-                <strong id="pageIndicator">1 / 24</strong>
+                <strong id="pageIndicator">1 / 1</strong>
                 <button id="nextPageBtn" type="button">다음 슬라이드</button>
-                <button class="square" type="button">⛶</button>
+                <button class="square fullscreen-button" id="fullscreenBtn" type="button" aria-label="전체화면">⛶</button>
               </div>
             </section>
             <section class="time-card">
               <div>
                 <h2>발표 진행 시간</h2>
                 <strong id="timerText">00:00</strong>
-                <p>예상 20분 · 경과 0%</p>
-                <span class="progress-bar small"></span>
+                <label class="expected-time-label" for="expectedTimeSelect">발표 예상 시간</label>
+                <select id="expectedTimeSelect" class="expected-time-select">
+                  <option value="2">2분</option>
+                  <option value="4">4분</option>
+                  <option value="6">6분</option>
+                  <option value="8">8분</option>
+                  <option value="10">10분</option>
+                  <option value="12">12분</option>
+                  <option value="14">14분</option>
+                  <option value="16">16분</option>
+                  <option value="18">18분</option>
+                  <option value="20" selected>20분</option>
+                </select>
+                <p id="progressText">발표 진행률 0%</p>
+                <span class="progress-bar small" id="presentationProgressBar"></span>
               </div>
               <button class="start-button" id="presentationToggleBtn" type="button"><span>▶</span>발표 시작</button>
             </section>
             <section class="annotation-tools" aria-label="판서 도구">
-              <label class="pdf-upload-button" for="pdfUploadInput">PDF &#48520;&#47084;&#50724;&#44592;</label>
+              <button class="pdf-upload-button" id="pdfLibraryOpenBtn" type="button">PDF 불러오기</button>
               <input type="file" id="pdfUploadInput" accept="application/pdf" />
               <div class="mode-status">현재 모드: <strong id="currentModeText">포인터</strong></div>
               <div class="mode-buttons">
@@ -71,8 +86,39 @@
                 <button type="button" class="mode-button" data-mode="highlight">형광펜</button>
               </div>
               <div class="canvas-actions">
-                <button type="button" id="clearCanvasBtn">전체 초기화</button>
+                <button type="button" id="clearCanvasBtn">판서 지우기</button>
                 <button type="button" id="saveBtn">저장</button>
+              </div>
+            </section>
+            <section class="fullscreen-presenter-ui" aria-label="전체화면 발표 도구">
+              <button class="panel-toggle-button" id="fullscreenPanelToggleBtn" type="button" aria-expanded="true">최소화</button>
+              <div class="fullscreen-control-panel">
+                <div class="fullscreen-row fullscreen-row-top">
+                  <span>발표 경과시간 <strong id="fullscreenTimerText">00:00</strong></span>
+                  <span>발표 예상 시간 <strong id="fullscreenExpectedTimeText">20분</strong></span>
+                  <button class="start-button" id="fullscreenEndBtn" type="button">발표 종료</button>
+                </div>
+                <div class="fullscreen-row fullscreen-row-middle">
+                  <span class="progress-bar small" id="fullscreenProgressBar"></span>
+                  <strong id="fullscreenPageIndicator">1 / 1</strong>
+                  <span id="fullscreenProgressText">0%</span>
+                </div>
+                <div class="fullscreen-row fullscreen-tools">
+                  <button type="button" class="mode-button active" data-mode="pointer">포인터</button>
+                  <button type="button" class="mode-button" data-mode="pen">펜</button>
+                  <button type="button" class="mode-button" data-mode="highlight">형광펜</button>
+                  <button type="button" id="fullscreenClearCanvasBtn">지우개</button>
+                </div>
+              </div>
+            </section>
+            <section class="calibration-panel" aria-label="캘리브레이션 상태">
+              <div>
+                <span class="calibration-badge" id="calibrationBadge">캘리브레이션 필요</span>
+                <p id="calibrationStatusText">손 제스처 기준을 등록해주세요.</p>
+              </div>
+              <div class="calibration-actions">
+                <button id="calibrationStartBtn" type="button">캘리브레이션 시작</button>
+                <button id="calibrationResetBtn" type="button">다시 설정</button>
               </div>
             </section>
           </div>
@@ -87,19 +133,49 @@
             </section>
             <section class="gesture-card">
               <h2>제스처 안내</h2>
-              <article><b>☝</b><div><h3>검지 포인터</h3><p>검지를 펴면 포인터가 켜집니다</p></div></article>
-              <article><b>✍</b><div><h3>펜 / 형광펜</h3><p>선택한 모드로 슬라이드에 판서</p></div></article>
-              <article><b>✋</b><div><h3>전체 초기화</h3><p>손바닥을 1초 유지하면 판서 초기화</p></div></article>
-              <article><b>◀</b><div><h3>이전 슬라이드</h3><p>엄지만 펴면 이전 페이지</p></div></article>
-              <article><b>▶</b><div><h3>다음 슬라이드</h3><p>검지와 중지 터치 후 오른쪽 스와이프</p></div></article>
+              <article><b>👍</b><div><h3>이전 슬라이드</h3><p>엄지손가락을 올리기</p></div></article>
+              <article><b>✌️</b><div><h3>다음 슬라이드</h3><p>검지와 중지를 펴서 넘기기</p></div></article>
+              <article><b>☝️</b><div><h3>포인터</h3><p>검지로 화면 가리키기</p></div></article>
+              <article><b>✍️</b><div><h3>펜</h3><p>엄지와 검지를 붙여 펜 잡기</p></div></article>
+              <article><b>🖐️</b><div><h3>지우개</h3><p>손바닥을 펴고 흔들기</p></div></article>
             </section>
           </aside>
         </section>
       </section>
     </main>
     <div id="toast" role="status" aria-live="polite">저장 완료</div>
+    <div class="modal-backdrop" id="presentationSummaryModal" aria-hidden="true">
+      <section class="airnote-modal presentation-summary-modal" role="dialog" aria-modal="true" aria-labelledby="presentationSummaryTitle">
+        <h2 id="presentationSummaryTitle">발표가 종료되었습니다.</h2>
+        <p class="modal-helper">확인을 누르면 발표 기록이 자동 저장됩니다.</p>
+        <div class="summary-list" id="presentationSummaryList"></div>
+        <button class="primary-button" id="summaryConfirmBtn" type="button">확인</button>
+      </section>
+    </div>
+    <div class="modal-backdrop" id="pdfSelectModal" aria-hidden="true">
+      <section class="airnote-modal pdf-select-modal" role="dialog" aria-modal="true" aria-labelledby="pdfSelectTitle">
+        <button class="modal-close" id="pdfModalCloseBtn" type="button" aria-label="닫기">×</button>
+        <h2 id="pdfSelectTitle">최근 업로드 자료에서 발표할 PDF를 선택하세요.</h2>
+        <div class="modal-file-list" id="modalPdfList"></div>
+      </section>
+    </div>
+    <div class="modal-backdrop" id="calibrationModal" aria-hidden="true">
+      <section class="airnote-modal calibration-modal" role="dialog" aria-modal="true" aria-labelledby="calibrationTitle">
+        <h2 id="calibrationTitle">발표 전 캘리브레이션 안내</h2>
+        <p>캘리브레이션은 AirNote가 사용자의 손 크기와 손동작을 더 정확하게 알아볼 수 있도록 기준을 맞추는 과정입니다.</p>
+        <p>사람마다 손 크기와 제스처 모양이 조금씩 다르기 때문에, 로그인 후 처음 한 번 손바닥과 밑줄 제스처를 등록해두면 이후 발표에서도 안정적으로 인식됩니다.</p>
+        <strong class="calibration-summary">로그인 후 한 번만 등록하면 다음부터 자동으로 적용돼요.</strong>
+        <div class="calibration-steps">
+          <article><b>🖐️</b><div><h3>손바닥 등록</h3><p>손바닥을 펴고 2초간 유지해주세요.</p></div></article>
+          <article><b>✍️</b><div><h3>밑줄 제스처 등록</h3><p>엄지와 검지를 붙인 상태로 2초간 유지해주세요.</p></div></article>
+          <article><b>✅</b><div><h3>최초 1회만 등록</h3><p>한 번 저장하면 다음 발표부터 자동으로 적용돼요.</p></div></article>
+        </div>
+        <label class="modal-check"><input id="calibrationConfirmCheck" type="checkbox" /> 안내 내용을 확인했습니다.</label>
+        <button class="primary-button" id="calibrationConfirmBtn" type="button" disabled>확인이 필요합니다</button>
+      </section>
+    </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="../js/presentation.js"></script>
-    <script type="module" src="../js/handPointer.js"></script>
+    <script src="../js/presentation.js?v=airnote-text-fix"></script>
+    <script type="module" src="../js/handPointer.js?v=airnote-text-fix"></script>
   </body>
 </html>

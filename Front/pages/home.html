@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AirNote - 홈화면</title>
-    <link rel="stylesheet" href="../css/styles.css" />
+    <title>AirNote - 홈</title>
+    <link rel="stylesheet" href="../css/styles.css?v=airnote-text-fix" />
   </head>
   <body>
     <main class="app-layout">
@@ -16,43 +16,52 @@
           <h1>AirNote</h1>
         </a>
         <nav>
-          <a class="active" href="home.html"><span class="menu-icon menu-icon-home" aria-hidden="true"></span>홈화면</a>
-          <a href="presentation.html"><span class="menu-icon menu-icon-play" aria-hidden="true"></span>발표 진행</a>
-          <a href="mypage.html"><span class="menu-icon menu-icon-user" aria-hidden="true"></span>마이페이지</a>
+          <a class="active" href="home.html"><span class="menu-emoji icon-mask icon-sidebar-home" aria-hidden="true"></span>홈화면</a>
+          <a href="presentation.html"><span class="menu-emoji icon-mask icon-sidebar-presentation" aria-hidden="true"></span>발표 진행</a>
+          <a href="mypage.html"><span class="menu-emoji icon-mask icon-sidebar-mypage" aria-hidden="true"></span>마이페이지</a>
         </nav>
         <section class="guide-card">
-          <h2>♢ 업로드 팁</h2>
-          <p>PDF 파일을 업로드하면<br />발표에 활용할 수 있어요.</p>
+          <h2>자료 업로드 안내</h2>
+          <p>PDF 파일을 업로드하면<br />발표에서 사용할 수 있어요.</p>
         </section>
       </aside>
 
-      <section class="workspace">
-        <header class="topbar">
-          <div>
-            <h2>안녕하세요! 👋</h2>
-            <p>오늘의 발표를 스마트하게 준비해보세요.</p>
-          </div>
-          <div class="profile">L</div><b class="caret">⌄</b>
-        </header>
+      <section class="workspace home-main">
+        <div class="home-content">
+          <header class="topbar home-header">
+            <div>
+              <h2 id="homeGreeting">안녕하세요, 발표자님</h2>
+              <p>오늘의 발표를 스마트하게 준비해보세요.</p>
+            </div>
+            <a class="profile" href="mypage.html" aria-label="마이페이지">L</a>
+            <a class="logout-link" href="../index.html"><span class="logout-icon icon-mask icon-logout" aria-hidden="true"></span>로그아웃</a>
+          </header>
 
-        <section class="drop-zone">
-          <div class="cloud">☁</div>
-          <h2>파일을 드래그하거나 선택하세요</h2>
-          <p>PDF 파일만 업로드할 수 있어요.</p>
-          <button>파일 선택</button>
-          <small>최대 100MB까지 업로드 가능</small>
-        </section>
+          <section class="drop-zone upload-card upload-section">
+            <div class="cloud">📄</div>
+            <h2>PDF 파일을 선택하세요</h2>
+            <p>PDF 파일만 업로드할 수 있어요.</p>
+            <input id="homePdfInput" class="home-pdf-input" type="file" accept="application/pdf" />
+            <button id="homePdfSelectBtn" type="button">파일 선택</button>
+            <p id="homeUploadStatus" class="upload-status" role="status">PDF 파일을 선택해주세요.</p>
+            <small>최대 100MB까지 업로드 가능</small>
+          </section>
 
-        <section class="recent-head">
-          <h2>최근 업로드 자료</h2>
-          <a href="#">전체 보기 ›</a>
-        </section>
-        <section class="file-list">
-          <article><b class="pdf orange">P</b><div><h3>AirNote_서비스소개.pdf</h3><p>2024.05.20 14:30 · 24 pages</p></div><button class="outline orange">열기</button><span>⋮</span></article>
-          <article><b class="pdf red">PDF</b><div><h3>마케팅_전략_발표.pdf</h3><p>2024.05.18 10:15 · 18 pages</p></div><button class="outline red">열기</button><span>⋮</span></article>
-          <article><b class="pdf orange">P</b><div><h3>팀_프로젝트_리뷰.pdf</h3><p>2024.05.15 16:45 · 32 pages</p></div><button class="outline orange">열기</button><span>⋮</span></article>
-        </section>
+          <section class="recent-head recent-section">
+            <h2>최근 업로드 자료</h2>
+            <button class="link-button" id="openAllUploadsBtn" type="button">전체 보기</button>
+          </section>
+          <section class="file-list recent-list" id="recentUploadList"></section>
+        </div>
       </section>
     </main>
+    <div class="modal-backdrop" id="allUploadsModal" aria-hidden="true">
+      <section class="airnote-modal upload-list-modal" role="dialog" aria-modal="true" aria-labelledby="allUploadsTitle">
+        <button class="modal-close" id="allUploadsCloseBtn" type="button" aria-label="닫기">×</button>
+        <h2 id="allUploadsTitle">전체 업로드 자료</h2>
+        <div class="modal-file-list" id="allUploadList"></div>
+      </section>
+    </div>
+    <script src="../js/home.js?v=airnote-text-fix"></script>
   </body>
 </html>

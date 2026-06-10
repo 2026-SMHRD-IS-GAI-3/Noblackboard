@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AirNote</title>
-    <link rel="stylesheet" href="css/styles.css" />
+    <link rel="stylesheet" href="css/styles.css?v=airnote-text-fix" />
   </head>
   <body class="auth-bg">
     <main class="auth-shell login-screen">
@@ -20,69 +20,232 @@
         </div>
 
         <div class="hero-copy">
-          <h2>웹캠으로 제스처 인식,<br /><span>스마트</span>한 발표 보조 시스템</h2>
+          <h2>웹캠으로 제스처 인식,<br /><span>스마트한</span> 발표 보조 시스템</h2>
           <p>웹캠으로 제스처를 인식해 슬라이드를 손쉽게 제어하고,<br />발표가 끝난 뒤에는 발표 기록까지 확인할 수 있습니다.</p>
         </div>
 
         <div class="feature-grid">
           <article class="mini-card">
-            <strong class="mini-icon">☝</strong>
+            <strong class="mini-icon">01</strong>
             <div>
               <h3>웹캠 제스처 인식</h3>
-              <p>손동작으로 슬라이드를 제어</p>
+              <p>제스처로 슬라이드를 제어</p>
             </div>
           </article>
           <article class="mini-card">
-            <strong class="mini-icon">▣</strong>
+            <strong class="mini-icon">02</strong>
             <div>
               <h3>발표 보조 기능</h3>
-              <p>펜·도형·페이지 넘기기 지원</p>
+              <p>포인터, 펜, 페이지 넘기기 지원</p>
             </div>
           </article>
           <article class="mini-card">
-            <strong class="mini-icon">▾</strong>
+            <strong class="mini-icon">03</strong>
             <div>
               <h3>발표 기록 저장</h3>
-              <p>발표 내용 자동 저장 및 확인</p>
+              <p>발표 내용 저장 및 확인</p>
             </div>
           </article>
         </div>
 
         <div class="status-panel">
           <article class="status-card">
-            <p class="success">• 시스템 연결 상태</p>
-            <h3>정상 연결</h3>
-            <p>웹캠이 인식되고 있습니다.</p>
+            <p class="success">시스템 연결 상태</p>
+            <h3 id="systemStatusTitle">연결 필요</h3>
+            <p id="systemStatusMessage">카메라 연결이 필요합니다.</p>
             <div class="progress-row">
-              <span class="progress-bar full"></span>
-              <b>100%</b>
+              <span class="progress-bar" id="systemStatusBar"></span>
+              <b id="systemStatusPercent">0%</b>
             </div>
           </article>
           <article class="hand-card">
-            <span>✋🏻</span>
-            <b>✓</b>
+            <span aria-hidden="true">👋🏻</span>
+            <b id="cameraStatusBadge">OFF</b>
           </article>
         </div>
 
-        <p class="tip-line"><b>♢ TIP</b> 손을 오른쪽으로 스와이프를 하면 다음 슬라이드로 넘어갑니다.</p>
+        <p class="tip-line"><b>TIP</b> 검지와 중지를 붙여 오른쪽으로 넘기면 다음 슬라이드로 넘어갑니다.</p>
       </section>
 
       <section class="auth-card login-card">
         <h2>로그인</h2>
         <p>로그인하고 더 스마트한 발표를 경험해보세요.</p>
-        <form>
+        <form id="loginForm">
           <label>이메일</label>
-          <div class="input-like">✉&nbsp;&nbsp; example@google.com</div>
+          <input class="input-like" id="loginEmail" type="email" placeholder="example@google.com" />
           <label>비밀번호</label>
-          <div class="input-like">🔒&nbsp;&nbsp; 비밀번호 입력</div>
-          <p class="check-line">☐ 로그인 상태 유지</p>
-          <a class="primary-button" href="pages/home.html">로그인</a>
+          <input class="input-like" id="loginPassword" type="password" placeholder="비밀번호 입력" />
+          <label class="check-line auth-check"><input id="rememberLogin" type="checkbox" /> 로그인 상태 유지</label>
+          <button class="primary-button" type="submit">로그인</button>
+          <div class="login-bottom-links">
+            <div class="signup-link">
+              <span>계정이 없나요?</span>
+              <a href="pages/signup.html">회원가입</a>
+            </div>
+            <button class="link-button forgot-password-link" id="forgotPasswordBtn" type="button">비밀번호 찾기</button>
+          </div>
         </form>
-        <div class="auth-links">
-          <a href="pages/signup.html">계정이 없나요? 회원가입</a>
-          <a href="#">비밀번호 찾기</a>
-        </div>
       </section>
     </main>
+    <div class="modal-backdrop" id="forgotPasswordModal" aria-hidden="true">
+      <section class="airnote-modal" role="dialog" aria-modal="true" aria-labelledby="forgotPasswordTitle">
+        <button class="modal-close" id="forgotPasswordCloseBtn" type="button" aria-label="닫기">×</button>
+        <h2 id="forgotPasswordTitle">비밀번호 찾기</h2>
+        <p>가입한 이름과 이메일을 입력해주세요.</p>
+        <div class="forgot-password-form">
+          <label>이름</label>
+          <input class="input-like" id="forgotName" type="text" placeholder="이름 입력" />
+          <label>이메일</label>
+          <input class="input-like" id="forgotEmail" type="email" placeholder="airnote@example.com" />
+          <p class="form-message" id="forgotPasswordMessage" role="alert"></p>
+        </div>
+        <button class="primary-button" id="togglePasswordViewBtn" type="button">비밀번호 확인</button>
+        <p class="password-preview" id="passwordPreview" hidden></p>
+      </section>
+    </div>
+    <div id="loginToast" class="auth-toast" role="alert" aria-live="assertive">이메일 또는 비밀번호가 일치하지 않습니다. 입력한 정보를 다시 확인해주세요.</div>
+    <script>
+      const TEST_USER = { name: "테스트", email: "air@note" };
+      const TEST_PASSWORD = "airnote0619";
+      const SIGNUP_USERS_KEY = "airnoteSignupUsers";
+
+      function updateSystemStatus(cameraConnected) {
+        const percent = cameraConnected ? 100 : 0;
+        const title = cameraConnected ? "정상 연결" : "연결 필요";
+        const message = cameraConnected ? "카메라가 연결되어 있습니다." : "카메라 연결이 필요합니다.";
+
+        document.getElementById("systemStatusTitle").textContent = title;
+        document.getElementById("systemStatusMessage").textContent = message;
+        document.getElementById("systemStatusPercent").textContent = `${percent}%`;
+        document.getElementById("systemStatusBar").style.setProperty("--progress", `${percent}%`);
+        document.getElementById("cameraStatusBadge").textContent = cameraConnected ? "ON" : "OFF";
+        document.querySelector(".status-panel")?.classList.toggle("is-connected", cameraConnected);
+        document.querySelector(".status-panel")?.classList.toggle("is-disconnected", !cameraConnected);
+      }
+
+      async function checkCameraStatus() {
+        if (!navigator.mediaDevices) {
+          updateSystemStatus(false);
+          return;
+        }
+
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices?.();
+          const hasCamera = Array.isArray(devices) && devices.some((device) => device.kind === "videoinput");
+          if (hasCamera) {
+            updateSystemStatus(true);
+            return;
+          }
+
+          if (!navigator.mediaDevices.getUserMedia) {
+            updateSystemStatus(false);
+            return;
+          }
+
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          stream.getTracks().forEach((track) => track.stop());
+          updateSystemStatus(true);
+        } catch (error) {
+          console.warn("AirNote login: camera status check failed.", error);
+          updateSystemStatus(false);
+        }
+      }
+
+      function setForgotPasswordModalOpen(isOpen) {
+        const modal = document.getElementById("forgotPasswordModal");
+        modal?.classList.toggle("show", isOpen);
+        modal?.setAttribute("aria-hidden", String(!isOpen));
+      }
+
+      document.getElementById("loginForm")?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const email = document.getElementById("loginEmail")?.value.trim();
+        const password = document.getElementById("loginPassword")?.value;
+        const remember = document.getElementById("rememberLogin")?.checked;
+        if (email === TEST_USER.email && password === TEST_PASSWORD) {
+          localStorage.setItem("airnoteCurrentUserEmail", TEST_USER.email);
+          localStorage.setItem("airnoteCurrentUserName", TEST_USER.name);
+          localStorage.setItem("airnoteCurrentUserPassword", TEST_PASSWORD);
+          localStorage.setItem("airnoteCurrentUser", JSON.stringify({ ...TEST_USER, password: TEST_PASSWORD }));
+          if (remember) localStorage.setItem("airnoteRememberLogin", "true");
+          else localStorage.removeItem("airnoteRememberLogin");
+          sessionStorage.setItem("airnoteSessionActive", "true");
+          window.location.href = "pages/home.html";
+          return;
+        }
+
+        const users = getSignupUsers();
+        const matchedUser = users.find((user) => user.email === email && user.password === password);
+        if (matchedUser) {
+          localStorage.setItem("airnoteCurrentUserEmail", matchedUser.email);
+          localStorage.setItem("airnoteCurrentUserName", matchedUser.name);
+          localStorage.setItem("airnoteCurrentUserPassword", matchedUser.password);
+          localStorage.setItem("airnoteCurrentUser", JSON.stringify(matchedUser));
+          if (remember) localStorage.setItem("airnoteRememberLogin", "true");
+          else localStorage.removeItem("airnoteRememberLogin");
+          sessionStorage.setItem("airnoteSessionActive", "true");
+          window.location.href = "pages/home.html";
+          return;
+        }
+
+        const toast = document.getElementById("loginToast");
+        toast?.classList.add("show");
+        window.clearTimeout(window.airnoteLoginToastTimer);
+        window.airnoteLoginToastTimer = window.setTimeout(() => toast?.classList.remove("show"), 2600);
+      });
+
+      function getSignupUsers() {
+        try {
+          return JSON.parse(localStorage.getItem(SIGNUP_USERS_KEY) || "[]");
+        } catch (error) {
+          console.warn("AirNote login: signup users parse failed.", error);
+          return [];
+        }
+      }
+
+      function findUserForPasswordLookup(name, email) {
+        if (name === TEST_USER.name && email === TEST_USER.email) {
+          return { ...TEST_USER, password: TEST_PASSWORD };
+        }
+        return getSignupUsers().find((user) => user.name === name && user.email === email) || null;
+      }
+
+      document.getElementById("forgotPasswordBtn")?.addEventListener("click", () => setForgotPasswordModalOpen(true));
+      document.getElementById("forgotPasswordCloseBtn")?.addEventListener("click", () => setForgotPasswordModalOpen(false));
+      document.getElementById("forgotPasswordModal")?.addEventListener("click", (event) => {
+        if (event.target === event.currentTarget) setForgotPasswordModalOpen(false);
+      });
+      document.getElementById("togglePasswordViewBtn")?.addEventListener("click", () => {
+        const preview = document.getElementById("passwordPreview");
+        const button = document.getElementById("togglePasswordViewBtn");
+        if (!preview || !button) return;
+
+        if (!preview.hidden) {
+          preview.hidden = true;
+          button.textContent = "비밀번호 확인";
+          return;
+        }
+
+        const name = document.getElementById("forgotName")?.value.trim();
+        const email = document.getElementById("forgotEmail")?.value.trim();
+        const message = document.getElementById("forgotPasswordMessage");
+        const user = findUserForPasswordLookup(name, email);
+
+        if (!user) {
+          if (message) message.textContent = "입력한 정보와 일치하는 계정을 찾을 수 없습니다.";
+          preview.hidden = true;
+          button.textContent = "비밀번호 확인";
+          return;
+        }
+
+        if (message) message.textContent = "";
+        preview.textContent = `확인된 비밀번호: ${user.password}`;
+        preview.hidden = false;
+        button.textContent = "비밀번호 숨기기";
+      });
+
+      updateSystemStatus(false);
+      checkCameraStatus();
+    </script>
   </body>
 </html>

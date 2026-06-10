@@ -1,10 +1,10 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AirNote - 마이페이지</title>
-    <link rel="stylesheet" href="../css/styles.css" />
+    <link rel="stylesheet" href="../css/styles.css?v=airnote-text-fix" />
   </head>
   <body>
     <main class="app-layout">
@@ -16,12 +16,12 @@
           <h1>AirNote</h1>
         </a>
         <nav>
-          <a href="home.html"><span class="menu-icon menu-icon-home" aria-hidden="true"></span>홈화면</a>
-          <a href="presentation.html"><span class="menu-icon menu-icon-play" aria-hidden="true"></span>발표 진행</a>
-          <a class="active" href="mypage.html"><span class="menu-icon menu-icon-user" aria-hidden="true"></span>마이페이지</a>
+          <a href="home.html"><span class="menu-emoji icon-mask icon-sidebar-home" aria-hidden="true"></span>홈화면</a>
+          <a href="presentation.html"><span class="menu-emoji icon-mask icon-sidebar-presentation" aria-hidden="true"></span>발표 진행</a>
+          <a class="active" href="mypage.html"><span class="menu-emoji icon-mask icon-sidebar-mypage" aria-hidden="true"></span>마이페이지</a>
         </nav>
         <section class="guide-card">
-          <h2>♢ 발표 기록 가이드</h2>
+          <h2>발표 기록 가이드</h2>
           <p>최근 발표 기록을 확인하고<br />관리해보세요.</p>
         </section>
       </aside>
@@ -29,22 +29,182 @@
       <section class="workspace mypage">
         <header class="topbar">
           <div><h2>마이페이지</h2><p>내 정보와 발표 기록을 확인하세요.</p></div>
-          <div class="profile">L</div><b class="caret">⌄</b>
+          <a class="profile" href="mypage.html" aria-label="마이페이지">L</a>
+          <a class="logout-link" href="../index.html"><span class="logout-icon icon-mask icon-logout" aria-hidden="true"></span>로그아웃</a>
         </header>
         <section class="metrics">
-          <article><span class="lime">📆</span><div><strong>26.05.24</strong><h3>최근 발표 날짜</h3><p>가장 최근 발표 날짜</p></div></article>
-          <article><span>💾</span><div><strong>12건</strong><h3>발표 기록</h3><p>내가 진행한 발표의 총 기록</p></div></article>
-          <article><span class="blue">⏱</span><div><strong>14분</strong><h3>최근 발표</h3><p>가장 최근 발표 시간</p></div></article>
+          <article>
+            <div class="card-top">
+              <span class="icon-wrap green-bg"><b class="summary-icon icon-mask icon-summary-date" aria-hidden="true"></b></span>
+              <h3 class="card-label">최근 발표 날짜</h3>
+            </div>
+            <div class="divider"></div>
+            <div class="card-bottom">
+              <strong class="card-value" id="latestRecordDate">-</strong>
+              <p class="card-desc" id="latestRecordDateDesc">저장된 발표 기록이 없습니다.</p>
+            </div>
+          </article>
+          <article>
+            <div class="card-top">
+              <span class="icon-wrap purple-bg"><b class="summary-icon icon-mask icon-summary-history" aria-hidden="true"></b></span>
+              <h3 class="card-label">발표 기록</h3>
+            </div>
+            <div class="divider"></div>
+            <div class="card-bottom">
+              <strong class="card-value" id="recordCount">0건</strong>
+              <p class="card-desc">내가 진행한 발표의 총 기록</p>
+            </div>
+          </article>
+          <article>
+            <div class="card-top">
+              <span class="icon-wrap blue-bg"><b class="summary-icon icon-mask icon-summary-time" aria-hidden="true"></b></span>
+              <h3 class="card-label">최근 발표 시간</h3>
+            </div>
+            <div class="divider"></div>
+            <div class="card-bottom">
+              <strong class="card-value" id="latestRecordTime">-</strong>
+              <p class="card-desc" id="latestRecordTimeDesc">저장된 발표 기록이 없습니다.</p>
+            </div>
+          </article>
         </section>
-        <section class="history-card">
-          <h2>최근 발표 기록</h2>
-          <article><b>▨</b><div><h3>AI 서비스 소개 최종본</h3><p>2026. 05. 24 · 14:23</p></div><span>14분</span><i>›</i></article>
-          <article><b>▨</b><div><h3>프로젝트 중간 보고</h3><p>2026. 05. 21 · 10:15</p></div><span>23분</span><i>›</i></article>
-          <article><b>▨</b><div><h3>제품 기능 소개 v2</h3><p>2026. 05. 18 · 16:40</p></div><span>18분</span><i>›</i></article>
-          <article><b>▨</b><div><h3>팀 회의 발표 자료</h3><p>2026. 05. 15 · 09:32</p></div><span>11분</span><i>›</i></article>
-          <article><b>▨</b><div><h3>UX/UI 기획안 공유</h3><p>2026. 05. 12 · 13:05</p></div><span>17분</span><i>›</i></article>
+        <section class="history-card" id="presentationHistoryCard">
+          <h2><span class="history-title-icon icon-mask icon-summary-history" aria-hidden="true"></span>최근 발표 기록</h2>
+          <div id="presentationRecordList"><p class="empty-state">아직 저장된 발표 기록이 없습니다.</p></div>
         </section>
       </section>
     </main>
+    <script>
+      (() => {
+        const RECORDS_KEY = "airnote.presentationRecords";
+        const listEl = document.getElementById("presentationRecordList");
+        const latestDateEl = document.getElementById("latestRecordDate");
+        const latestDateDescEl = document.getElementById("latestRecordDateDesc");
+        const countEl = document.getElementById("recordCount");
+        const latestTimeEl = document.getElementById("latestRecordTime");
+        const latestTimeDescEl = document.getElementById("latestRecordTimeDesc");
+
+        function hasActiveLogin() {
+          return localStorage.getItem("airnoteRememberLogin") === "true"
+            || sessionStorage.getItem("airnoteSessionActive") === "true"
+            || Boolean(localStorage.getItem("airnoteCurrentUserEmail"));
+        }
+
+        function clearLoginState() {
+          localStorage.removeItem("airnoteRememberLogin");
+          localStorage.removeItem("airnoteCurrentUserEmail");
+          localStorage.removeItem("airnoteCurrentUserName");
+          localStorage.removeItem("airnoteCurrentUserPassword");
+          localStorage.removeItem("airnoteCurrentUser");
+          sessionStorage.removeItem("airnoteSessionActive");
+        }
+
+        function getRecords() {
+          try {
+            return JSON.parse(localStorage.getItem(RECORDS_KEY) || "[]");
+          } catch (error) {
+            console.warn("AirNote mypage: records parse failed.", error);
+            return [];
+          }
+        }
+
+        function saveRecords(records) {
+          localStorage.setItem(RECORDS_KEY, JSON.stringify(records));
+        }
+
+        function getRecordDate(record) {
+          return record.presentationDate || record.date || "-";
+        }
+
+        function getRecordElapsed(record) {
+          return record.elapsedTime || record.elapsedText || "00:00";
+        }
+
+        function getRecordProgress(record) {
+          const value = record.progressRate ?? record.progressPercent;
+          return Number.isFinite(Number(value)) ? `${Number(value)}%` : "0%";
+        }
+
+        function renderMetrics(records) {
+          const latest = records[0];
+          if (latestDateEl) latestDateEl.textContent = latest ? getRecordDate(latest) : "-";
+          if (latestDateDescEl) latestDateDescEl.textContent = latest ? "가장 최근 발표 날짜" : "저장된 발표 기록이 없습니다.";
+          if (countEl) countEl.textContent = `${records.length}건`;
+          if (latestTimeEl) latestTimeEl.textContent = latest ? getRecordElapsed(latest) : "-";
+          if (latestTimeDescEl) latestTimeDescEl.textContent = latest ? "가장 최근 발표 시간" : "저장된 발표 기록이 없습니다.";
+        }
+
+        function deleteRecord(id) {
+          if (!window.confirm("삭제하시겠습니까?")) return;
+          const records = getRecords().filter((record) => record.id !== id);
+          saveRecords(records);
+          renderRecords();
+        }
+
+        function createRecordArticle(record) {
+          const article = document.createElement("article");
+          article.className = "presentation-record";
+          article.innerHTML = `
+            <div class="record-left-group">
+              <p class="record-info-row">
+                <span class="record-icon-box file"><span class="record-line-icon icon-mask icon-record-file" aria-hidden="true"></span></span>
+                <span class="record-info-label">발표 자료명:</span>
+                <strong class="record-info-value record-file-name"></strong>
+              </p>
+              <p class="record-info-row">
+                <span class="record-icon-box time"><span class="record-line-icon icon-mask icon-record-time" aria-hidden="true"></span></span>
+                <span class="record-info-label">발표 시간:</span>
+                <span class="record-info-value">${getRecordElapsed(record)}</span>
+              </p>
+            </div>
+            <div class="record-middle-group">
+              <div class="record-middle-top">
+                <p class="record-info-row">
+                  <span class="record-icon-box date"><span class="record-line-icon icon-mask icon-record-date" aria-hidden="true"></span></span>
+                  <span class="record-info-label">발표 날짜:</span>
+                  <span class="record-info-value">${getRecordDate(record)}</span>
+                </p>
+                <p class="record-info-row">
+                  <span class="record-icon-box progress"><span class="record-line-icon icon-mask icon-record-progress" aria-hidden="true"></span></span>
+                  <span class="record-info-label">발표 경과율:</span>
+                  <span class="record-info-value">${getRecordProgress(record)}</span>
+                </p>
+              </div>
+              <p class="record-info-row">
+                <span class="record-icon-box annotation"><span class="record-line-icon icon-mask icon-record-annotations" aria-hidden="true"></span></span>
+                <span class="record-info-label">저장된 판서:</span>
+                <span class="record-info-value">${record.annotationCount || 0}개</span>
+              </p>
+            </div>
+            <div class="record-actions">
+              <button class="delete-button delete-record-button" type="button"><span class="button-icon icon-mask icon-record-delete" aria-hidden="true"></span>삭제</button>
+            </div>
+          `;
+          article.querySelector("strong").textContent = record.fileName || "선택된 발표 자료 없음";
+          article.querySelector("button").addEventListener("click", () => deleteRecord(record.id));
+          return article;
+        }
+
+        function renderRecords() {
+          const records = getRecords();
+          renderMetrics(records);
+          if (!listEl) return;
+          listEl.innerHTML = "";
+          if (!records.length) {
+            listEl.innerHTML = '<p class="empty-state">아직 저장된 발표 기록이 없습니다.</p>';
+            return;
+          }
+          records.forEach((record) => listEl.append(createRecordArticle(record)));
+        }
+
+        document.querySelector(".brand-row.small")?.addEventListener("click", (event) => {
+          event.preventDefault();
+          window.location.href = hasActiveLogin() ? "home.html" : "../index.html";
+        });
+        document.querySelector(".logout-link")?.addEventListener("click", clearLoginState);
+        renderRecords();
+      })();
+    </script>
   </body>
 </html>
+
+
