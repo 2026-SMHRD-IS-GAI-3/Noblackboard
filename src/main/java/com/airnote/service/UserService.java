@@ -23,13 +23,13 @@ public class UserService {
 		}
 
 		// 이미 가입된 이메일이면 회원가입 실패
-		if (userDAO.existsByEmail(email)) {
+		if (userDAO.existsByEmail(email.trim())) {
 			return null;
 		}
 
 		User user = new User();
-		user.setName(name);
-		user.setEmail(email);
+		user.setName(name.trim());
+		user.setEmail(email.trim());
 		user.setPassword(password);
 
 		int userId = userDAO.insertUser(user);
@@ -39,6 +39,10 @@ public class UserService {
 		}
 
 		user.setUserId(userId);
+
+		// 회원가입 직후 기본 캘리브레이션 상태
+		user.setCalibrationYn("N");
+		user.setCalibrationMirrorYn("N");
 
 		// 응답에 비밀번호는 보내지 않음
 		user.setPassword(null);
@@ -57,7 +61,7 @@ public class UserService {
 			return null;
 		}
 
-		User user = userDAO.selectUserByEmailAndPassword(email, password);
+		User user = userDAO.selectUserByEmailAndPassword(email.trim(), password);
 
 		if (user == null) {
 			return null;
@@ -67,5 +71,67 @@ public class UserService {
 		user.setPassword(null);
 
 		return user;
+	}
+
+	// 캘리브레이션 저장
+	public boolean saveCalibration(User user) {
+
+		if (user == null) {
+			return false;
+		}
+
+		if (user.getUserId() <= 0) {
+			return false;
+		}
+
+		// 캘리브레이션 계산값 필수 체크
+		if (user.getCalibrationOffsetX() == null) {
+			return false;
+		}
+
+		if (user.getCalibrationOffsetY() == null) {
+			return false;
+		}
+
+		if (user.getCalibrationScaleX() == null) {
+			return false;
+		}
+
+		if (user.getCalibrationScaleY() == null) {
+			return false;
+		}
+
+		// 화면 크기 정보 필수 체크
+		if (user.getCameraWidth() == null) {
+			return false;
+		}
+
+		if (user.getCameraHeight() == null) {
+			return false;
+		}
+
+		if (user.getCanvasWidth() == null) {
+			return false;
+		}
+
+		if (user.getCanvasHeight() == null) {
+			return false;
+		}
+
+		// mirror 값이 비어 있으면 기본값 N
+		if (user.getCalibrationMirrorYn() == null || user.getCalibrationMirrorYn().trim().isEmpty()) {
+			user.setCalibrationMirrorYn("N");
+		} else {
+			user.setCalibrationMirrorYn(user.getCalibrationMirrorYn().trim().toUpperCase());
+		}
+
+		// Y/N 값만 허용
+		if (!"Y".equals(user.getCalibrationMirrorYn()) && !"N".equals(user.getCalibrationMirrorYn())) {
+			return false;
+		}
+
+		int result = userDAO.updateCalibration(user);
+
+		return result > 0;
 	}
 }

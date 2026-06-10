@@ -2,6 +2,8 @@ package com.airnote.controller;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -10,13 +12,11 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
-import com.airnote.common.ApiResponse;
 import com.airnote.model.User;
 import com.airnote.service.UserService;
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 
-@WebServlet(urlPatterns = { "/api/users/register", "/api/users/login" })
+@WebServlet(urlPatterns = { "/api/users/register", "/api/users/login", "/api/users/calibration" })
 public class UserController extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 
@@ -30,113 +30,130 @@ public class UserController extends HttpServlet {
 		request.setCharacterEncoding("UTF-8");
 		response.setContentType("application/json; charset=UTF-8");
 
-		String uri = request.getRequestURI();
+		String path = request.getServletPath();
 
-		if (uri.endsWith("/api/users/register")) {
+		if ("/api/users/register".equals(path)) {
 			register(request, response);
 			return;
 		}
 
-		if (uri.endsWith("/api/users/login")) {
+		if ("/api/users/login".equals(path)) {
 			login(request, response);
 			return;
 		}
 
-		response.getWriter().write(gson.toJson(ApiResponse.error("지원하지 않는 사용자 요청입니다.")));
+		if ("/api/users/calibration".equals(path)) {
+			saveCalibration(request, response);
+			return;
+		}
+
+		writeJson(response, false, "지원하지 않는 요청입니다.", null);
 	}
 
+	// 회원가입
 	private void register(HttpServletRequest request, HttpServletResponse response) throws IOException {
 
-		try {
-			JsonObject json = readJson(request);
+		String body = readBody(request);
 
-			String name = getValue(request, json, "name");
-			String email = getValue(request, json, "email");
-			String password = getValue(request, json, "password");
+		User requestUser = null;
 
-			if (name == null || email == null || password == null) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("name, email, password가 필요합니다.")));
-				return;
-			}
-
-			User user = userService.register(name, email, password);
-
-			if (user == null) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("회원가입 실패 또는 이미 가입된 이메일입니다.")));
-				return;
-			}
-
-			response.getWriter().write(gson.toJson(ApiResponse.success("회원가입 성공", user)));
-
-		} catch (Exception e) {
-			e.printStackTrace();
-			response.getWriter().write(gson.toJson(ApiResponse.error("회원가입 처리 중 오류가 발생했습니다.")));
+		if (body != null && !body.trim().isEmpty()) {
+			requestUser = gson.fromJson(body, User.class);
+		} else {
+			requestUser = new User();
+			requestUser.setName(request.getParameter("name"));
+			requestUser.setEmail(request.getParameter("email"));
+			requestUser.setPassword(request.getParameter("password"));
 		}
+
+		User user = userService.register(requestUser.getName(), requestUser.getEmail(), requestUser.getPassword());
+
+		if (user == null) {
+			writeJson(response, false, "회원가입 실패", null);
+			return;
+		}
+
+		writeJson(response, true, "회원가입 성공", user);
 	}
 
+	// 로그인
 	private void login(HttpServletRequest request, HttpServletResponse response) throws IOException {
 
-		try {
-			JsonObject json = readJson(request);
+		String body = readBody(request);
 
-			String email = getValue(request, json, "email");
-			String password = getValue(request, json, "password");
+		User requestUser = null;
 
-			if (email == null || password == null) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("email, password가 필요합니다.")));
-				return;
-			}
-
-			User user = userService.login(email, password);
-
-			if (user == null) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("이메일 또는 비밀번호가 올바르지 않습니다.")));
-				return;
-			}
-
-			// 세션에도 로그인 사용자 저장
-			HttpSession session = request.getSession();
-			session.setAttribute("loginUser", user);
-			session.setAttribute("userId", user.getUserId());
-
-			response.getWriter().write(gson.toJson(ApiResponse.success("로그인 성공", user)));
-
-		} catch (Exception e) {
-			e.printStackTrace();
-			response.getWriter().write(gson.toJson(ApiResponse.error("로그인 처리 중 오류가 발생했습니다.")));
+		if (body != null && !body.trim().isEmpty()) {
+			requestUser = gson.fromJson(body, User.class);
+		} else {
+			requestUser = new User();
+			requestUser.setEmail(request.getParameter("email"));
+			requestUser.setPassword(request.getParameter("password"));
 		}
+
+		User user = userService.login(requestUser.getEmail(), requestUser.getPassword());
+
+		if (user == null) {
+			writeJson(response, false, "로그인 실패", null);
+			return;
+		}
+
+		HttpSession session = request.getSession();
+		session.setAttribute("loginUser", user);
+		session.setAttribute("userId", user.getUserId());
+
+		writeJson(response, true, "로그인 성공", user);
 	}
 
-	private String getValue(HttpServletRequest request, JsonObject json, String key) {
+	// 캘리브레이션 저장
+	private void saveCalibration(HttpServletRequest request, HttpServletResponse response) throws IOException {
 
-		String value = request.getParameter(key);
+		String body = readBody(request);
 
-		if (value != null && !value.trim().isEmpty()) {
-			return value;
+		if (body == null || body.trim().isEmpty()) {
+			writeJson(response, false, "요청 데이터가 없습니다.", null);
+			return;
 		}
 
-		if (json != null && json.has(key) && !json.get(key).isJsonNull()) {
-			return json.get(key).getAsString();
+		User user = gson.fromJson(body, User.class);
+
+		boolean result = userService.saveCalibration(user);
+
+		if (!result) {
+			writeJson(response, false, "캘리브레이션 저장 실패", null);
+			return;
 		}
 
-		return null;
+		Map<String, Object> data = new HashMap<>();
+		data.put("userId", user.getUserId());
+		data.put("calibrationYn", "Y");
+
+		writeJson(response, true, "캘리브레이션 저장 성공", data);
 	}
 
-	private JsonObject readJson(HttpServletRequest request) throws IOException {
+	private String readBody(HttpServletRequest request) throws IOException {
 
 		StringBuilder sb = new StringBuilder();
-		String line;
 
 		try (BufferedReader br = request.getReader()) {
+			String line;
+
 			while ((line = br.readLine()) != null) {
 				sb.append(line);
 			}
 		}
 
-		if (sb.length() == 0) {
-			return null;
-		}
+		return sb.toString();
+	}
 
-		return gson.fromJson(sb.toString(), JsonObject.class);
+	private void writeJson(HttpServletResponse response, boolean success, String message, Object data)
+			throws IOException {
+
+		Map<String, Object> result = new HashMap<>();
+		result.put("success", success);
+		result.put("message", message);
+		result.put("data", data);
+
+		response.getWriter().write(gson.toJson(result));
 	}
 }
