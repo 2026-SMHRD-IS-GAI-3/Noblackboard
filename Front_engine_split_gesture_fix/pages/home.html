@@ -1,0 +1,67 @@
+﻿<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AirNote - 홈</title>
+    <link rel="stylesheet" href="../css/styles.css?v=airnote-text-fix" />
+  </head>
+  <body>
+    <main class="app-layout">
+      <aside class="sidebar">
+        <a class="brand-row small" href="../index.html">
+          <div class="logo-mark small">
+            <span class="logo-ring"></span><span class="logo-ring inner"></span><span class="logo-dot"></span><span class="logo-leaf"></span>
+          </div>
+          <h1>AirNote</h1>
+        </a>
+        <nav>
+          <a class="active" href="home.html"><span class="menu-emoji icon-mask icon-sidebar-home" aria-hidden="true"></span>홈화면</a>
+          <a href="presentation.html"><span class="menu-emoji icon-mask icon-sidebar-presentation" aria-hidden="true"></span>발표 진행</a>
+          <a href="mypage.html"><span class="menu-emoji icon-mask icon-sidebar-mypage" aria-hidden="true"></span>마이페이지</a>
+        </nav>
+        <section class="guide-card">
+          <h2>자료 업로드 안내</h2>
+          <p>PDF 파일을 업로드하면<br />발표에서 사용할 수 있어요.</p>
+        </section>
+      </aside>
+
+      <section class="workspace home-main">
+        <div class="home-content">
+          <header class="topbar home-header">
+            <div>
+              <h2 id="homeGreeting">안녕하세요, 발표자님</h2>
+              <p>오늘의 발표를 스마트하게 준비해보세요.</p>
+            </div>
+            <a class="profile" href="mypage.html" aria-label="마이페이지">L</a>
+            <a class="logout-link" href="../index.html"><span class="logout-icon icon-mask icon-logout" aria-hidden="true"></span>로그아웃</a>
+          </header>
+
+          <section class="drop-zone upload-card upload-section">
+            <div class="cloud">📄</div>
+            <h2>PDF 파일을 선택하세요</h2>
+            <p>PDF 파일만 업로드할 수 있어요.</p>
+            <input id="homePdfInput" class="home-pdf-input" type="file" accept="application/pdf" />
+            <button id="homePdfSelectBtn" type="button">파일 선택</button>
+            <p id="homeUploadStatus" class="upload-status" role="status">PDF 파일을 선택해주세요.</p>
+            <small>최대 100MB까지 업로드 가능</small>
+          </section>
+
+          <section class="recent-head recent-section">
+            <h2>최근 업로드 자료</h2>
+            <button class="link-button" id="openAllUploadsBtn" type="button">전체 보기</button>
+          </section>
+          <section class="file-list recent-list" id="recentUploadList"></section>
+        </div>
+      </section>
+    </main>
+    <div class="modal-backdrop" id="allUploadsModal" aria-hidden="true">
+      <section class="airnote-modal upload-list-modal" role="dialog" aria-modal="true" aria-labelledby="allUploadsTitle">
+        <button class="modal-close" id="allUploadsCloseBtn" type="button" aria-label="닫기">×</button>
+        <h2 id="allUploadsTitle">전체 업로드 자료</h2>
+        <div class="modal-file-list" id="allUploadList"></div>
+      </section>
+    </div>
+    <script type="module" src="../js/pages/home.js"></script>
+  </body>
+</html>
