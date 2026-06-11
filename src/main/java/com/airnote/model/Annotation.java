@@ -1,6 +1,6 @@
 package com.airnote.model;
 
-// 밑줄, 형광펜, 포인터 등 실제 판서 기록 정보를 담는 모델 클래스
+import java.util.Date;
 
 public class Annotation {
 
@@ -13,10 +13,19 @@ public class Annotation {
 	private double startY;
 	private double endX;
 	private double endY;
-	private Integer anchorId;
-	private Integer matchLogId;
+	private int anchorId;
+	private int matchLogId;
 	private String sourceType;
-	private Double matchConfidence;
+	private double matchConfidence;
+	private Date createdAt;
+
+	// 삭제 처리용 컬럼
+	private String deletedYn;
+	private Date deletedAt;
+	private String deleteType;
+
+	public Annotation() {
+	}
 
 	public int getAnnotationId() {
 		return annotationId;
@@ -90,19 +99,19 @@ public class Annotation {
 		this.endY = endY;
 	}
 
-	public Integer getAnchorId() {
+	public int getAnchorId() {
 		return anchorId;
 	}
 
-	public void setAnchorId(Integer anchorId) {
+	public void setAnchorId(int anchorId) {
 		this.anchorId = anchorId;
 	}
 
-	public Integer getMatchLogId() {
+	public int getMatchLogId() {
 		return matchLogId;
 	}
 
-	public void setMatchLogId(Integer matchLogId) {
+	public void setMatchLogId(int matchLogId) {
 		this.matchLogId = matchLogId;
 	}
 
@@ -114,11 +123,43 @@ public class Annotation {
 		this.sourceType = sourceType;
 	}
 
-	public Double getMatchConfidence() {
+	public double getMatchConfidence() {
 		return matchConfidence;
 	}
 
-	public void setMatchConfidence(Double matchConfidence) {
+	public void setMatchConfidence(double matchConfidence) {
 		this.matchConfidence = matchConfidence;
+	}
+
+	public Date getCreatedAt() {
+		return createdAt;
+	}
+
+	public void setCreatedAt(Date createdAt) {
+		this.createdAt = createdAt;
+	}
+
+	public String getDeletedYn() {
+		return deletedYn;
+	}
+
+	public void setDeletedYn(String deletedYn) {
+		this.deletedYn = deletedYn;
+	}
+
+	public Date getDeletedAt() {
+		return deletedAt;
+	}
+
+	public void setDeletedAt(Date deletedAt) {
+		this.deletedAt = deletedAt;
+	}
+
+	public String getDeleteType() {
+		return deleteType;
+	}
+
+	public void setDeleteType(String deleteType) {
+		this.deleteType = deleteType;
 	}
 }

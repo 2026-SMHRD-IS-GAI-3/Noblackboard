@@ -3,124 +3,176 @@ package com.airnote.dao;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.airnote.model.Annotation;
 import com.airnote.util.DBUtil;
 
-// TB_ANNOTATION 테이블에 판서/도구 사용 기록을 저장하는 DB 클래스
-
 public class AnnotationDAO {
 
 	public int insertAnnotation(Annotation annotation) {
-		int annotationId = 0;
+		String idSql = "SELECT SEQ_ANNOTATION_ID.NEXTVAL FROM DUAL";
 
-		String sql = "INSERT INTO TB_ANNOTATION " + "(ANNOTATION_ID, PRESENTATION_ID, PAGE_NO, TOOL_TYPE, COLOR, "
-				+ "START_X, START_Y, END_X, END_Y, "
-				+ "ANCHOR_ID, MATCH_LOG_ID, SOURCE_TYPE, MATCH_CONFIDENCE, CREATED_AT) "
-				+ "VALUES (SEQ_ANNOTATION_ID.NEXTVAL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATE)";
+		String insertSql = "" + "INSERT INTO TB_ANNOTATION ("
+				+ "  ANNOTATION_ID, PRESENTATION_ID, PAGE_NO, TOOL_TYPE, COLOR, " + "  START_X, START_Y, END_X, END_Y, "
+				+ "  ANCHOR_ID, MATCH_LOG_ID, SOURCE_TYPE, MATCH_CONFIDENCE, CREATED_AT" + ") VALUES ("
+				+ "  ?, ?, ?, ?, ?, " + "  ?, ?, ?, ?, " + "  ?, ?, ?, ?, SYSDATE" + ")";
 
-		String selectSql = "SELECT SEQ_ANNOTATION_ID.CURRVAL FROM DUAL";
+		Connection conn = null;
+		PreparedStatement psId = null;
+		PreparedStatement psInsert = null;
+		ResultSet rs = null;
 
-		try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
-			ps.setInt(1, annotation.getPresentationId());
-			ps.setInt(2, annotation.getPageNo());
-			ps.setString(3, annotation.getToolType());
-			ps.setString(4, annotation.getColor());
-			ps.setDouble(5, annotation.getStartX());
-			ps.setDouble(6, annotation.getStartY());
-			ps.setDouble(7, annotation.getEndX());
-			ps.setDouble(8, annotation.getEndY());
+		try {
+			conn = DBUtil.getConnection();
 
-			if (annotation.getAnchorId() == null) {
-				ps.setNull(9, java.sql.Types.NUMERIC);
-			} else {
-				ps.setInt(9, annotation.getAnchorId());
+			psId = conn.prepareStatement(idSql);
+			rs = psId.executeQuery();
+
+			int annotationId = 0;
+			if (rs.next()) {
+				annotationId = rs.getInt(1);
 			}
 
-			if (annotation.getMatchLogId() == null) {
-				ps.setNull(10, java.sql.Types.NUMERIC);
+			psInsert = conn.prepareStatement(insertSql);
+			psInsert.setInt(1, annotationId);
+			psInsert.setInt(2, annotation.getPresentationId());
+			psInsert.setInt(3, annotation.getPageNo());
+			psInsert.setString(4, annotation.getToolType());
+			psInsert.setString(5, annotation.getColor());
+			psInsert.setDouble(6, annotation.getStartX());
+			psInsert.setDouble(7, annotation.getStartY());
+			psInsert.setDouble(8, annotation.getEndX());
+			psInsert.setDouble(9, annotation.getEndY());
+
+			if (annotation.getAnchorId() > 0) {
+				psInsert.setInt(10, annotation.getAnchorId());
 			} else {
-				ps.setInt(10, annotation.getMatchLogId());
+				psInsert.setNull(10, java.sql.Types.NUMERIC);
 			}
 
-			ps.setString(11, annotation.getSourceType());
-
-			if (annotation.getMatchConfidence() == null) {
-				ps.setNull(12, java.sql.Types.NUMERIC);
+			if (annotation.getMatchLogId() > 0) {
+				psInsert.setInt(11, annotation.getMatchLogId());
 			} else {
-				ps.setDouble(12, annotation.getMatchConfidence());
+				psInsert.setNull(11, java.sql.Types.NUMERIC);
 			}
 
-			int result = ps.executeUpdate();
+			psInsert.setString(12, annotation.getSourceType());
+
+			if (annotation.getMatchConfidence() > 0) {
+				psInsert.setDouble(13, annotation.getMatchConfidence());
+			} else {
+				psInsert.setNull(13, java.sql.Types.NUMERIC);
+			}
+
+			int result = psInsert.executeUpdate();
 
 			if (result > 0) {
-				try (PreparedStatement ps2 = conn.prepareStatement(selectSql); ResultSet rs = ps2.executeQuery()) {
-					if (rs.next()) {
-						annotationId = rs.getInt(1);
-					}
-				}
+				return annotationId;
 			}
+
+			return 0;
 
 		} catch (Exception e) {
 			e.printStackTrace();
+			return 0;
+		} finally {
+			close(rs);
+			close(psId);
+			close(psInsert);
+			close(conn);
 		}
-
-		return annotationId;
 	}
 
-	// 특정 발표의 판서 기록 목록 조회
-	public java.util.List<Annotation> selectAnnotationList(int presentationId) {
-		java.util.List<Annotation> list = new java.util.ArrayList<>();
+	public List<Annotation> selectAnnotationList(int presentationId) {
+		List<Annotation> list = new ArrayList<>();
 
-		String sql = "SELECT ANNOTATION_ID, PRESENTATION_ID, PAGE_NO, TOOL_TYPE, COLOR, "
-				+ "START_X, START_Y, END_X, END_Y, " + "ANCHOR_ID, MATCH_LOG_ID, SOURCE_TYPE, MATCH_CONFIDENCE "
-				+ "FROM TB_ANNOTATION " + "WHERE PRESENTATION_ID = ? " + "ORDER BY ANNOTATION_ID";
+		String sql = "" + "SELECT " + "  ANNOTATION_ID, PRESENTATION_ID, PAGE_NO, TOOL_TYPE, COLOR, "
+				+ "  START_X, START_Y, END_X, END_Y, "
+				+ "  ANCHOR_ID, MATCH_LOG_ID, SOURCE_TYPE, MATCH_CONFIDENCE, CREATED_AT, "
+				+ "  DELETED_YN, DELETED_AT, DELETE_TYPE " + "FROM TB_ANNOTATION " + "WHERE PRESENTATION_ID = ? "
+				+ "  AND NVL(DELETED_YN, 'N') = 'N' " + "ORDER BY CREATED_AT ASC";
 
-		try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+		Connection conn = null;
+		PreparedStatement ps = null;
+		ResultSet rs = null;
+
+		try {
+			conn = DBUtil.getConnection();
+			ps = conn.prepareStatement(sql);
 			ps.setInt(1, presentationId);
+			rs = ps.executeQuery();
 
-			try (ResultSet rs = ps.executeQuery()) {
-				while (rs.next()) {
-					Annotation annotation = new Annotation();
+			while (rs.next()) {
+				Annotation annotation = new Annotation();
 
-					annotation.setAnnotationId(rs.getInt("ANNOTATION_ID"));
-					annotation.setPresentationId(rs.getInt("PRESENTATION_ID"));
-					annotation.setPageNo(rs.getInt("PAGE_NO"));
-					annotation.setToolType(rs.getString("TOOL_TYPE"));
-					annotation.setColor(rs.getString("COLOR"));
-					annotation.setStartX(rs.getDouble("START_X"));
-					annotation.setStartY(rs.getDouble("START_Y"));
-					annotation.setEndX(rs.getDouble("END_X"));
-					annotation.setEndY(rs.getDouble("END_Y"));
+				annotation.setAnnotationId(rs.getInt("ANNOTATION_ID"));
+				annotation.setPresentationId(rs.getInt("PRESENTATION_ID"));
+				annotation.setPageNo(rs.getInt("PAGE_NO"));
+				annotation.setToolType(rs.getString("TOOL_TYPE"));
+				annotation.setColor(rs.getString("COLOR"));
+				annotation.setStartX(rs.getDouble("START_X"));
+				annotation.setStartY(rs.getDouble("START_Y"));
+				annotation.setEndX(rs.getDouble("END_X"));
+				annotation.setEndY(rs.getDouble("END_Y"));
+				annotation.setAnchorId(rs.getInt("ANCHOR_ID"));
+				annotation.setMatchLogId(rs.getInt("MATCH_LOG_ID"));
+				annotation.setSourceType(rs.getString("SOURCE_TYPE"));
+				annotation.setMatchConfidence(rs.getDouble("MATCH_CONFIDENCE"));
+				annotation.setCreatedAt(rs.getTimestamp("CREATED_AT"));
+				annotation.setDeletedYn(rs.getString("DELETED_YN"));
+				annotation.setDeletedAt(rs.getTimestamp("DELETED_AT"));
+				annotation.setDeleteType(rs.getString("DELETE_TYPE"));
 
-					if (rs.getObject("ANCHOR_ID") == null) {
-						annotation.setAnchorId(null);
-					} else {
-						annotation.setAnchorId(rs.getInt("ANCHOR_ID"));
-					}
-
-					if (rs.getObject("MATCH_LOG_ID") == null) {
-						annotation.setMatchLogId(null);
-					} else {
-						annotation.setMatchLogId(rs.getInt("MATCH_LOG_ID"));
-					}
-
-					annotation.setSourceType(rs.getString("SOURCE_TYPE"));
-
-					if (rs.getObject("MATCH_CONFIDENCE") == null) {
-						annotation.setMatchConfidence(null);
-					} else {
-						annotation.setMatchConfidence(rs.getDouble("MATCH_CONFIDENCE"));
-					}
-
-					list.add(annotation);
-				}
+				list.add(annotation);
 			}
 
 		} catch (Exception e) {
 			e.printStackTrace();
+		} finally {
+			close(rs);
+			close(ps);
+			close(conn);
 		}
 
 		return list;
+	}
+
+	public int deleteAnnotation(int annotationId, int presentationId, String deleteType) {
+		String sql = "" + "UPDATE TB_ANNOTATION " + "SET DELETED_YN = 'Y', " + "    DELETED_AT = SYSDATE, "
+				+ "    DELETE_TYPE = ? " + "WHERE ANNOTATION_ID = ? " + "  AND PRESENTATION_ID = ? "
+				+ "  AND NVL(DELETED_YN, 'N') = 'N'";
+
+		Connection conn = null;
+		PreparedStatement ps = null;
+
+		try {
+			conn = DBUtil.getConnection();
+			ps = conn.prepareStatement(sql);
+
+			ps.setString(1, deleteType);
+			ps.setInt(2, annotationId);
+			ps.setInt(3, presentationId);
+
+			return ps.executeUpdate();
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			return 0;
+		} finally {
+			close(ps);
+			close(conn);
+		}
+	}
+
+	private void close(AutoCloseable closeable) {
+		if (closeable != null) {
+			try {
+				closeable.close();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
 	}
 }
