@@ -1,0 +1,18 @@
+{
+  "name": "airnote-front",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --configLoader runner",
+    "build": "vite build --configLoader runner",
+    "preview": "vite preview",
+    "test": "vitest run --configLoader runner",
+    "test:watch": "vitest --configLoader runner"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}

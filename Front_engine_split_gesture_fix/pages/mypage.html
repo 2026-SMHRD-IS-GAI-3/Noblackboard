@@ -1,0 +1,80 @@
+﻿<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AirNote - 마이페이지</title>
+    <link rel="stylesheet" href="../css/styles.css?v=airnote-text-fix" />
+  </head>
+  <body>
+    <main class="app-layout">
+      <aside class="sidebar">
+        <a class="brand-row small" href="../index.html">
+          <div class="logo-mark small">
+            <span class="logo-ring"></span><span class="logo-ring inner"></span><span class="logo-dot"></span><span class="logo-leaf"></span>
+          </div>
+          <h1>AirNote</h1>
+        </a>
+        <nav>
+          <a href="home.html"><span class="menu-emoji icon-mask icon-sidebar-home" aria-hidden="true"></span>홈화면</a>
+          <a href="presentation.html"><span class="menu-emoji icon-mask icon-sidebar-presentation" aria-hidden="true"></span>발표 진행</a>
+          <a class="active" href="mypage.html"><span class="menu-emoji icon-mask icon-sidebar-mypage" aria-hidden="true"></span>마이페이지</a>
+        </nav>
+        <section class="guide-card">
+          <h2>발표 기록 가이드</h2>
+          <p>최근 발표 기록을 확인하고<br />관리해보세요.</p>
+        </section>
+      </aside>
+
+      <section class="workspace mypage">
+        <header class="topbar">
+          <div><h2>마이페이지</h2><p>내 정보와 발표 기록을 확인하세요.</p></div>
+          <a class="profile" href="mypage.html" aria-label="마이페이지">L</a>
+          <a class="logout-link" href="../index.html"><span class="logout-icon icon-mask icon-logout" aria-hidden="true"></span>로그아웃</a>
+        </header>
+        <section class="metrics">
+          <article>
+            <div class="card-top">
+              <span class="icon-wrap green-bg"><b class="summary-icon icon-mask icon-summary-date" aria-hidden="true"></b></span>
+              <h3 class="card-label">최근 발표 날짜</h3>
+            </div>
+            <div class="divider"></div>
+            <div class="card-bottom">
+              <strong class="card-value" id="latestRecordDate">-</strong>
+              <p class="card-desc" id="latestRecordDateDesc">저장된 발표 기록이 없습니다.</p>
+            </div>
+          </article>
+          <article>
+            <div class="card-top">
+              <span class="icon-wrap purple-bg"><b class="summary-icon icon-mask icon-summary-history" aria-hidden="true"></b></span>
+              <h3 class="card-label">발표 기록</h3>
+            </div>
+            <div class="divider"></div>
+            <div class="card-bottom">
+              <strong class="card-value" id="recordCount">0건</strong>
+              <p class="card-desc">내가 진행한 발표의 총 기록</p>
+            </div>
+          </article>
+          <article>
+            <div class="card-top">
+              <span class="icon-wrap blue-bg"><b class="summary-icon icon-mask icon-summary-time" aria-hidden="true"></b></span>
+              <h3 class="card-label">최근 발표 시간</h3>
+            </div>
+            <div class="divider"></div>
+            <div class="card-bottom">
+              <strong class="card-value" id="latestRecordTime">-</strong>
+              <p class="card-desc" id="latestRecordTimeDesc">저장된 발표 기록이 없습니다.</p>
+            </div>
+          </article>
+        </section>
+        <section class="history-card" id="presentationHistoryCard">
+          <h2><span class="history-title-icon icon-mask icon-summary-history" aria-hidden="true"></span>최근 발표 기록</h2>
+          <div id="presentationRecordList"><p class="empty-state">아직 저장된 발표 기록이 없습니다.</p></div>
+        </section>
+      </section>
+    </main>
+    <script type="module" src="../js/pages/mypage.js"></script>
+  </body>
+</html>
+
+
