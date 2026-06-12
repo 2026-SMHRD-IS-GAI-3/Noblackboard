@@ -1,4 +1,4 @@
-import { saveLoginSession } from "../core/auth.js";
+import { saveLoginSession, startLocalGestureSession } from "../core/auth.js";
 import { AirNoteApi } from "../core/api.js";
 import { STORAGE_KEYS } from "../core/constants.js";
 import { readJson } from "../core/storage.js";
@@ -92,6 +92,13 @@ document.getElementById("loginForm")?.addEventListener("submit", async (event) =
     "이메일 또는 비밀번호가 일치하지 않습니다. 입력한 정보를 다시 확인해주세요.",
     2600
   );
+});
+
+document.getElementById("localGestureTestBtn")?.addEventListener("click", () => {
+  startLocalGestureSession();
+  sessionStorage.removeItem(STORAGE_KEYS.currentPdfId);
+  sessionStorage.removeItem(STORAGE_KEYS.currentPresentationId);
+  window.location.href = "pages/presentation.html?local=1";
 });
 
 const forgotPasswordModal = document.getElementById("forgotPasswordModal");

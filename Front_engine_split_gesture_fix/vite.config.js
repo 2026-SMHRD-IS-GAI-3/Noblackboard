@@ -3,6 +3,14 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   root: ".",
+  server: {
+    proxy: {
+      "/AirNote_Backend": {
+        target: "http://localhost:8090",
+        changeOrigin: true,
+      },
+    },
+  },
   build: {
     rollupOptions: {
       input: {

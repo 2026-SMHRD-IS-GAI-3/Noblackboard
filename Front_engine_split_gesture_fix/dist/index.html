@@ -3,12 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AirNote</title>
-    <script type="module" crossorigin src="/assets/login-CaSTGGzG.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/api-BKxzwLzr.js">
-    <link rel="modulepreload" crossorigin href="/assets/auth-DmAaZA39.js">
+    <title>AirNote</title>
+    <script type="module" crossorigin src="/assets/login-CquUSuH0.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/api-DirpOkkB.js">
+    <link rel="modulepreload" crossorigin href="/assets/auth-ChDC6z4i.js">
     <link rel="modulepreload" crossorigin href="/assets/ui-Bgza8CZD.js">
-    <link rel="stylesheet" crossorigin href="/assets/api-DyUoBWMP.css">
+    <link rel="stylesheet" crossorigin href="/assets/api-BcAV2Vew.css">
   </head>
   <body class="auth-bg">
     <main class="auth-shell login-screen">
@@ -81,6 +81,10 @@
           <input class="input-like" id="loginPassword" type="password" placeholder="비밀번호 입력" />
           <label class="check-line auth-check"><input id="rememberLogin" type="checkbox" /> 로그인 상태 유지</label>
           <button class="primary-button" type="submit">로그인</button>
+          <button class="local-gesture-button" id="localGestureTestBtn" type="button">
+            DB 없이 웹캠 제스처 테스트
+          </button>
+          <p class="local-gesture-note">계정과 발표 기록은 서버에 저장되지 않습니다.</p>
           <div class="login-bottom-links">
             <div class="signup-link">
               <span>계정이 없나요?</span>
@@ -107,6 +111,6 @@
         <p class="password-preview" id="passwordPreview" hidden></p>
       </section>
     </div>
-    <div id="loginToast" class="auth-toast" role="alert" aria-live="assertive">이메일 또는 비밀번호가 일치하지 않습니다. 입력한 정보를 다시 확인해주세요.</div>
+    <div id="loginToast" class="auth-toast" role="alert" aria-live="assertive">이메일 또는 비밀번호가 일치하지 않습니다. 입력한 정보를 다시 확인해주세요.</div>
   </body>
 </html>

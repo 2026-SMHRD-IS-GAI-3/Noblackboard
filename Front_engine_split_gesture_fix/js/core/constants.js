@@ -15,7 +15,7 @@ export const STORAGE_KEYS = Object.freeze({
   currentPresentationId: "airnote.currentPresentationId",
 });
 
-export const API_BASE_URL = "http://localhost:8090/AirNote_Backend";
+export const API_BASE_URL = "/AirNote_Backend";
 
 export const DATABASES = Object.freeze({
   pdf: { name: "airnote-local-pdfs", version: 1, store: "pdfs" },

@@ -1,0 +1,23 @@
+node_modules/
+dist/
+test-results/
+
+# Local STT runtime
+stt_server/.venv/
+stt_server/models/
+stt_server/cuda-runtime/
+stt_server/*.log
+
+# Legacy local STT runtime
+airnote-stt/.venv/
+airnote-stt/models/
+airnote-stt/cuda-runtime/
+airnote-stt/*.log
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

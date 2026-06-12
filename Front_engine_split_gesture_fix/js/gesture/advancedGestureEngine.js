@@ -10,13 +10,20 @@ const DEFAULTS = {
   minPalmFacingForSensitive: 0.24,
   minStabilityForClear: 0.42,
   defaultReferencePalmSizePx: 90,
-  minCommandDistanceScale: 0.16,
-  minPointerDistanceScale: 0.12,
-  minAbsolutePointerPalmSizePx: 14,
-  minAbsoluteCommandPalmSizePx: 18,
+  minCommandDistanceScale: 0.08,
+  minPointerDistanceScale: 0.06,
+  minAbsolutePointerPalmSizePx: 8,
+  minAbsoluteCommandPalmSizePx: 10,
   farDistanceAnglePenalty: 2.2,
-  farGestureDistanceScale: 0.28,
-  farGesturePalmSizePx: 26,
+  distanceCompensationEnabled: true,
+  farGestureEnterDistanceScale: 0.34,
+  farGestureExitDistanceScale: 0.42,
+  farGestureEnterPalmSizePx: 30,
+  farGestureExitPalmSizePx: 36,
+  farTouchRatioMultiplier: 1.16,
+  farUnderlineStartMultiplier: 1.18,
+  farUnderlineContinueMultiplier: 1.8,
+  farUnderlineConfirmMs: 400,
 };
 
 const STRICT_COMMAND_ANGLE_OFFSET = 8;
@@ -135,6 +142,9 @@ export function createAdvancedGestureEngine({
     history: [],
     blend: 0,
   };
+  const distanceTracker = {
+    active: false,
+  };
 
   function reset() {
     lastContext = null;
@@ -143,6 +153,40 @@ export function createAdvancedGestureEngine({
     zoneTracker.candidateSince = 0;
     zoneTracker.history = [];
     zoneTracker.blend = 0;
+    distanceTracker.active = false;
+  }
+
+  function updateDistanceCompensation(distanceScale, palmSizePx) {
+    if (!constants.distanceCompensationEnabled) {
+      distanceTracker.active = false;
+      return {
+        enabled: false,
+        active: false,
+        mode: "standard",
+        reason: "disabled",
+      };
+    }
+
+    const shouldEnter =
+      distanceScale <= constants.farGestureEnterDistanceScale ||
+      palmSizePx <= constants.farGestureEnterPalmSizePx;
+    const shouldExit =
+      distanceScale >= constants.farGestureExitDistanceScale &&
+      palmSizePx >= constants.farGestureExitPalmSizePx;
+
+    if (!distanceTracker.active && shouldEnter) distanceTracker.active = true;
+    else if (distanceTracker.active && shouldExit) distanceTracker.active = false;
+
+    return {
+      enabled: true,
+      active: distanceTracker.active,
+      mode: distanceTracker.active ? "far" : "standard",
+      reason: distanceTracker.active ? "small_hand" : "normal_hand",
+      enterDistanceScale: constants.farGestureEnterDistanceScale,
+      exitDistanceScale: constants.farGestureExitDistanceScale,
+      enterPalmSizePx: constants.farGestureEnterPalmSizePx,
+      exitPalmSizePx: constants.farGestureExitPalmSizePx,
+    };
   }
 
   function updateScreenZone(palmCenter, now) {
@@ -210,12 +254,26 @@ export function createAdvancedGestureEngine({
       point.x >= 0.02 && point.x <= 0.98 && point.y >= 0.02 && point.y <= 0.98
     ).length / hand.length;
     const zone = updateScreenZone(palmCenter, now);
+    const rawZoneModifier = getZoneModifier(zone.rawZone, 1);
+    const effectiveZoneModifier = {
+      level: zone.level,
+      angleRelax: Math.max(zone.angleRelax || 0, rawZoneModifier.angleRelax || 0),
+      partialHandThreshold: Math.min(zone.partialHandThreshold, rawZoneModifier.partialHandThreshold),
+      sensitiveConfidenceBoost: Math.max(zone.sensitiveConfidenceBoost || 0, rawZoneModifier.sensitiveConfidenceBoost || 0),
+      pointerDistanceScaleBonus: Math.min(zone.pointerDistanceScaleBonus || 0, rawZoneModifier.pointerDistanceScaleBonus || 0),
+      stabilityRelax: Math.max(zone.stabilityRelax || 0, rawZoneModifier.stabilityRelax || 0),
+      smoothingBoost: Math.max(zone.smoothingBoost || 0, rawZoneModifier.smoothingBoost || 0),
+    };
+    const effectivePartialHandThreshold = Math.min(
+      effectiveZoneModifier.partialHandThreshold,
+    );
     const profile = getCalibrationProfile();
     const minPalmFacingScore = profile?.palmFacingScore
       ? clamp(profile.palmFacingScore * 0.55, 0.12, constants.minPalmFacingForSensitive)
       : constants.minPalmFacingForSensitive;
     const referencePalmSizePx = profile?.palmSizePx || constants.defaultReferencePalmSizePx;
     const distanceScale = clamp(palmSizePx / Math.max(referencePalmSizePx, 1), 0, 2);
+    const distanceCompensation = updateDistanceCompensation(distanceScale, palmSizePx);
 
     const context = {
       palmCenter,
@@ -235,18 +293,20 @@ export function createAdvancedGestureEngine({
       candidateScreenZone: zone.candidateZone,
       zoneLevel: zone.level,
       zoneBlend: zone.blend,
-      zoneModifier: zone,
-      partialHandThreshold: zone.partialHandThreshold,
+      zoneModifier: effectiveZoneModifier,
+      rawZoneModifier,
+      partialHandThreshold: effectivePartialHandThreshold,
       minPalmFacingScore,
       confidence: handConfidence,
       lowConfidence: handConfidence > 0 && handConfidence < constants.minHandConfidence,
-      partialHand: inFrameRatio < zone.partialHandThreshold,
+      partialHand: inFrameRatio < effectivePartialHandThreshold,
       angleUnstable: palmFacingScore < minPalmFacingScore,
       referencePalmSizePx,
       distanceScale,
-      farGestureMode: distanceScale < constants.farGestureDistanceScale || palmSizePx < constants.farGesturePalmSizePx,
+      distanceCompensation,
+      farGestureMode: distanceCompensation.active,
       tooFarForCommands:
-        distanceScale < constants.minCommandDistanceScale ||
+        distanceScale < constants.minCommandDistanceScale &&
         palmSizePx < constants.minAbsoluteCommandPalmSizePx,
       tooFarForPointer:
         distanceScale < Math.max(0.08, constants.minPointerDistanceScale + zone.pointerDistanceScaleBonus) ||
@@ -267,10 +327,25 @@ export function createAdvancedGestureEngine({
     const farPenalty = context.distanceScale < 0.72
       ? (0.72 - context.distanceScale) * constants.farDistanceAnglePenalty
       : 0;
-    const minCommandConfidence = context.lowConfidence || context.partialHand
-      ? 0.76
-      : constants.minCommandConfidence;
     const sensitiveBoost = context.zoneModifier?.sensitiveConfidenceBoost || 0;
+    const farMode = context.distanceCompensation?.active === true;
+    const ultraFarMode =
+      farMode &&
+      (
+        context.distanceScale <= constants.minCommandDistanceScale * 1.8 ||
+        context.palmSizePx <= constants.minAbsoluteCommandPalmSizePx * 1.8
+      );
+    const minCommandConfidence = context.lowConfidence || context.partialHand
+      ? (ultraFarMode ? 0.64 : farMode ? 0.70 : 0.76)
+      : (ultraFarMode ? 0.52 : farMode ? 0.58 : constants.minCommandConfidence);
+    const baseTouchRatio = profile?.touchDistanceRatio || constants.touchDistanceRatio;
+    const touchRatio = clamp(
+      baseTouchRatio *
+        (context.angleUnstable ? 0.9 : 1) *
+        (farMode ? constants.farTouchRatioMultiplier : 1),
+      0.22,
+      0.48,
+    );
 
     return {
       angleThreshold: clamp(
@@ -284,22 +359,31 @@ export function createAdvancedGestureEngine({
       ),
       distanceRatioPip: constants.distanceRatioPip,
       distanceRatioDip: constants.distanceRatioDip,
-      touchDistanceRatio: clamp(
-        (profile?.touchDistanceRatio || constants.touchDistanceRatio) *
-          (context.angleUnstable ? 0.9 : 1) *
-          (context.tooFarForCommands ? 0.82 : 1),
-        0.22,
-        0.48,
-      ),
-      touchRatio: clamp(
-        (profile?.touchDistanceRatio || constants.touchDistanceRatio) *
-          (context.angleUnstable ? 0.9 : 1) *
-          (context.tooFarForCommands ? 0.82 : 1),
-        0.22,
-        0.48,
-      ),
-      swipeMinDistance: clamp(Math.max(70.2, calibratedPalmSizePx * 1.15, getViewport().width * 0.105), 62, 145),
-      swipeMaxVerticalDrift: clamp(Math.max(64, calibratedPalmSizePx * 0.88), 55, 120),
+      touchDistanceRatio: touchRatio,
+      touchRatio,
+      swipeMinDistance: ultraFarMode
+        ? clamp(getViewport().width * 0.045, 48, 72)
+        : farMode
+        ? clamp(Math.max(76, calibratedPalmSizePx * 0.72, getViewport().width * 0.07), 76, 110)
+        : clamp(Math.max(92, calibratedPalmSizePx * 1.05, getViewport().width * 0.09), 88, 145),
+      swipeMaxVerticalDrift: ultraFarMode
+        ? clamp(getViewport().height * 0.15, 76, 120)
+        : farMode
+        ? clamp(Math.max(78, calibratedPalmSizePx * 0.92), 70, 132)
+        : clamp(Math.max(64, calibratedPalmSizePx * 0.88), 55, 120),
+      swipeMinShapeScore: ultraFarMode ? 0.36 : farMode ? 0.44 : 0.52,
+      swipeMinFinalScore: ultraFarMode ? 0.60 : farMode ? 0.68 : 0.75,
+      swipeMaxDurationMs: ultraFarMode ? 620 : farMode ? 460 : 340,
+      pinchSwipeMinDistance: ultraFarMode
+        ? clamp(getViewport().width * 0.04, 46, 68)
+        : farMode
+        ? clamp(getViewport().width * 0.065, 72, 98)
+        : clamp(getViewport().width * 0.085, 96, 125),
+      pinchSwipeIntentDistance: ultraFarMode ? 14 : farMode ? 20 : 28,
+      pinchSwipeDecisionMs: ultraFarMode ? 135 : farMode ? 115 : 105,
+      pinchSwipeMinShapeScore: ultraFarMode ? 0.34 : farMode ? 0.42 : 0.48,
+      pinchSwipeMinFinalScore: ultraFarMode ? 0.58 : farMode ? 0.66 : 0.72,
+      pinchSwipeMaxDurationMs: ultraFarMode ? 650 : farMode ? 480 : 380,
       minCommandConfidence,
       minSensitiveCommandConfidence: Math.max(
         minCommandConfidence,
@@ -309,12 +393,19 @@ export function createAdvancedGestureEngine({
         minCommandConfidence,
         constants.minSensitiveCommandConfidence + sensitiveBoost * 0.6,
       ),
-      underlineStartConfidence: constants.underlineStartConfidence,
-      previousPageHoldMs: 1000,
-      previousHoldMs: 1000,
+      underlineStartConfidence: farMode
+        ? Math.max(0.42, constants.underlineStartConfidence - 0.04)
+        : constants.underlineStartConfidence,
+      underlineStartTouchMultiplier: farMode ? 1.02 : 0.92,
+      underlineContinueTouchMultiplier: farMode ? constants.farUnderlineContinueMultiplier : 1.55,
+      underlineConfirmMs: farMode ? constants.farUnderlineConfirmMs : 450,
+      distanceCompensationMode: context.distanceCompensation?.mode || "standard",
+      ultraFarMode,
+      previousPageHoldMs: 520,
+      previousHoldMs: 520,
       openPalmHoldMs: 1000,
       clearHoldMs: 1000,
-      pointerAllowed: !context.tooFarForPointer,
+      pointerAllowed: true,
       commandDistanceAllowed: !context.tooFarForCommands,
       openPalmSpreadRatio: profile?.fingerSpread
         ? clamp(profile.fingerSpread * 0.72, 0.62, 1.6)
@@ -340,6 +431,12 @@ export function createAdvancedGestureEngine({
       const wristToDip = distance3D(wrist, dip);
       const tipPipRatio = wristToTip / Math.max(wristToPip, 0.001);
       const tipDipRatio = wristToTip / Math.max(wristToDip, 0.001);
+      const fingerPathLength =
+        distance3D(mcp, pip) +
+        distance3D(pip, dip) +
+        distance3D(dip, tip);
+      const directReachRatio = distance3D(mcp, tip) / palmSize;
+      const straightness = distance3D(mcp, tip) / Math.max(fingerPathLength, 0.001);
       const commandAngle = thresholds.angleThreshold + STRICT_COMMAND_ANGLE_OFFSET;
       const commandPip = thresholds.distanceRatioPip + STRICT_COMMAND_DISTANCE_PIP_BONUS;
       const commandDip = thresholds.distanceRatioDip + STRICT_COMMAND_DISTANCE_DIP_BONUS;
@@ -381,7 +478,13 @@ export function createAdvancedGestureEngine({
           wristToTip > wristToPip * commandPip * 0.98 &&
           wristToTip > wristToDip * commandDip * 0.98
         ) || (extended && score >= 0.62);
-      return { extended, commandExtended, score };
+      return {
+        extended,
+        commandExtended,
+        score,
+        directReachRatio,
+        straightness,
+      };
     }
 
     const thumbMcp = hand[2];
@@ -493,6 +596,14 @@ export function createAdvancedGestureEngine({
       middleScore: middle.score,
       ringScore: ring.score,
       pinkyScore: pinky.score,
+      indexDirectReachRatio: index.directReachRatio,
+      middleDirectReachRatio: middle.directReachRatio,
+      ringDirectReachRatio: ring.directReachRatio,
+      pinkyDirectReachRatio: pinky.directReachRatio,
+      indexStraightness: index.straightness,
+      middleStraightness: middle.straightness,
+      ringStraightness: ring.straightness,
+      pinkyStraightness: pinky.straightness,
     };
   }
 
@@ -505,17 +616,83 @@ export function createAdvancedGestureEngine({
     const thumbIndexRatio2D = thumbIndexDistance2D / Math.max(context.palmSize2D || palmSize, 0.001);
     const thumbIndexRatio = Math.min(thumbIndexRatio3D, thumbIndexRatio2D);
     const indexMiddleDistance = distance3D(hand[8], hand[12]);
+    const indexMiddleDistance2D = distance2D(hand[8], hand[12]);
     const indexMiddleRatio = indexMiddleDistance / palmSize;
+    const indexMiddleRatio2D =
+      indexMiddleDistance2D / Math.max(context.palmSize2D, 0.001);
     const touchThreshold = thresholds.touchDistanceRatio;
-    const relaxedTouchThreshold = touchThreshold * 1.2;
+    const farMode = context.distanceCompensation?.active === true;
+    const startTouchThreshold = clamp(
+      touchThreshold * (thresholds.underlineStartTouchMultiplier || 0.92),
+      0.24,
+      0.44,
+    );
+    const relaxedTouchThreshold = startTouchThreshold;
+    const writingTouchThreshold = clamp(
+      touchThreshold * (farMode ? 1.02 : 0.94),
+      0.24,
+      0.46,
+    );
+    const sideWritingTouchThreshold = clamp(
+      writingTouchThreshold * (farMode ? 1.14 : 1.10),
+      0.28,
+      0.48,
+    );
     const middleTouchThreshold = palmSize * clamp(thresholds.touchDistanceRatio * 1.32, 0.32, 0.62);
-    const pinchPoseReady =
-      fingers.indexScore >= 0.58 &&
-      fingers.thumbPinchVisibilityScore >= 0.42 &&
+    const extendedPinchPoseReady =
+      fingers.indexScore >= (farMode ? 0.48 : 0.58) &&
+      fingers.thumbPinchVisibilityScore >= (farMode ? 0.32 : 0.42) &&
       !fingers.thumbTuckedAcrossFist;
+    const pinchCenter = {
+      x: (hand[4].x + hand[8].x) / 2,
+      y: (hand[4].y + hand[8].y) / 2,
+    };
+    const pinchCenterPalmRatio = distance2D(pinchCenter, context.palmCenter) /
+      Math.max(context.palmSize2D, 0.001);
+    const indexReachRatio = distance2D(hand[5], hand[8]) /
+      Math.max(context.palmSize2D, 0.001);
+    const thumbReachRatio = distance2D(hand[2], hand[4]) /
+      Math.max(context.palmSize2D, 0.001);
+    const writingPinchPoseReady =
+      thumbIndexRatio2D < writingTouchThreshold &&
+      pinchCenterPalmRatio >= (farMode ? 0.62 : 0.68) &&
+      indexReachRatio >= (farMode ? 0.48 : 0.52) &&
+      thumbReachRatio >= (farMode ? 0.38 : 0.42) &&
+      fingers.indexScore >= (farMode ? 0.06 : 0.10);
+    const nearSidePinchIntent =
+      thumbIndexRatio2D < sideWritingTouchThreshold &&
+      pinchCenterPalmRatio >= (farMode ? 0.44 : 0.48) &&
+      indexReachRatio >= (farMode ? 0.32 : 0.36) &&
+      thumbReachRatio >= (farMode ? 0.26 : 0.30) &&
+      fingers.thumbPinchVisibilityScore >= 0.08;
+    const pinchApproachIntent =
+      thumbIndexRatio2D < sideWritingTouchThreshold * 1.22 &&
+      pinchCenterPalmRatio >= (farMode ? 0.40 : 0.44) &&
+      indexReachRatio >= (farMode ? 0.28 : 0.32) &&
+      thumbReachRatio >= (farMode ? 0.22 : 0.26);
+    const sidePinchPoseReady =
+      nearSidePinchIntent &&
+      (
+        fingers.indexScore >= 0.015 ||
+        fingers.indexDirectReachRatio >= (farMode ? 0.46 : 0.50)
+      );
+    const pinchPoseReady =
+      extendedPinchPoseReady ||
+      writingPinchPoseReady ||
+      sidePinchPoseReady;
     const thumbIndexTouch = thumbIndexRatio < touchThreshold && pinchPoseReady;
-    const relaxedThumbIndexTouch = thumbIndexRatio < relaxedTouchThreshold && pinchPoseReady;
+    const relaxedThumbIndexTouch =
+      thumbIndexRatio2D < (
+        sidePinchPoseReady
+          ? sideWritingTouchThreshold
+          : writingPinchPoseReady
+            ? writingTouchThreshold
+            : relaxedTouchThreshold
+      ) &&
+      pinchPoseReady;
     const indexMiddleTouch = indexMiddleDistance < middleTouchThreshold;
+    const indexMiddleSwipeTouch =
+      indexMiddleRatio2D <= (farMode ? 0.52 : 0.46);
     const nonThumbScores = [fingers.indexScore, fingers.middleScore, fingers.ringScore, fingers.pinkyScore];
     const maxNonThumbScore = Math.max(...nonThumbScores);
     const nonThumbOpenCount = nonThumbScores.filter((value) => value >= 0.72).length;
@@ -568,20 +745,62 @@ export function createAdvancedGestureEngine({
     const rawThumbOnly =
       thumbGestureIntent &&
       !thumbIndexTouch &&
+      !nearSidePinchIntent &&
       !intentionalIndexMiddleTouch &&
       !closedFistLike &&
       nonThumbCommandCount <= 1 &&
       nonThumbOpenCount <= 1 &&
       strongNonThumbOpenCount === 0 &&
       maxNonThumbScore < 0.86;
+    const openFingerCount = nonThumbScores.filter((value) => value >= 0.62).length;
+    const weakestFingerScore = Math.min(...nonThumbScores);
+    const averageOpenFingerScore =
+      nonThumbScores.reduce((sum, value) => sum + value, 0) / nonThumbScores.length;
+    const openReachCount = [
+      [fingers.indexDirectReachRatio, fingers.indexStraightness],
+      [fingers.middleDirectReachRatio, fingers.middleStraightness],
+      [fingers.ringDirectReachRatio, fingers.ringStraightness],
+      [fingers.pinkyDirectReachRatio, fingers.pinkyStraightness],
+    ].filter(([reach, straightness]) =>
+      reach >= (farMode ? 0.66 : 0.72) &&
+      straightness >= (farMode ? 0.58 : 0.62)
+    ).length;
+    const fingertipSpanRatio = Math.max(
+      distance2D(hand[8], hand[12]),
+      distance2D(hand[8], hand[16]),
+      distance2D(hand[8], hand[20]),
+      distance2D(hand[12], hand[16]),
+      distance2D(hand[12], hand[20]),
+      distance2D(hand[16], hand[20]),
+    ) / Math.max(context.palmSize2D, 0.001);
+    const clusteredFingertips =
+      fingertipSpanRatio < (farMode ? 0.34 : 0.40) &&
+      openReachCount < 3;
+    const closeFingerOpenPalm =
+      openFingerCount === 4 &&
+      openReachCount >= 3 &&
+      averageOpenFingerScore >= 0.72 &&
+      context.fingerSpread >= thresholds.openPalmSpreadRatio * 0.46;
     const rawOpenPalm =
-      fingers.index &&
-      fingers.middle &&
-      fingers.ring &&
-      fingers.pinky &&
-      context.fingerSpread >= thresholds.openPalmSpreadRatio * 0.78;
+      openFingerCount >= 3 &&
+      openReachCount >= 3 &&
+      !clusteredFingertips &&
+      (
+        context.fingerSpread >= thresholds.openPalmSpreadRatio * 0.62 ||
+        closeFingerOpenPalm
+      ) &&
+      !thumbIndexTouch;
     const touchScore = clamp(1 - thumbIndexRatio / Math.max(touchThreshold, 0.001), 0, 1);
-    const relaxedTouchScore = clamp(1 - thumbIndexRatio / Math.max(relaxedTouchThreshold, 0.001), 0, 1);
+    const activeRelaxedTouchThreshold = sidePinchPoseReady
+      ? sideWritingTouchThreshold
+      : writingPinchPoseReady
+        ? writingTouchThreshold
+        : relaxedTouchThreshold;
+    const relaxedTouchScore = clamp(
+      1 - thumbIndexRatio / Math.max(activeRelaxedTouchThreshold, 0.001),
+      0,
+      1,
+    );
     const middleTouchScore = clamp(1 - indexMiddleDistance / Math.max(middleTouchThreshold, 0.001), 0, 1);
     const environmentScore = clamp(
       context.palmFacingScore * 0.45 +
@@ -595,26 +814,72 @@ export function createAdvancedGestureEngine({
       : fingers.thumb || fingers.thumbScore >= 0.42
         ? clamp(fingers.thumbScore * 0.72, 0.30, 0.54)
         : 0;
+    const commandDistanceBlocked = context.tooFarForCommands;
+    const edgePartialTolerance =
+      context.partialHand &&
+      context.rawScreenZone !== "center" &&
+      context.inFrameRatio >= 0.22;
+    const partialHandBlocksUnderline =
+      context.partialHand &&
+      !(
+        edgePartialTolerance &&
+        relaxedTouchScore >= (farMode ? 0.14 : 0.20) &&
+        pinchCenterPalmRatio >= (
+          sidePinchPoseReady
+            ? (farMode ? 0.46 : 0.50)
+            : (farMode ? 0.54 : 0.58)
+        )
+      );
+    const partialHandBlocksClear =
+      context.partialHand &&
+      !(
+        edgePartialTolerance &&
+        context.inFrameRatio >= (openFingerCount >= 3 ? 0.54 : 0.66)
+      );
     const underlineBlocked =
       context.lowConfidence ||
-      (context.partialHand && relaxedTouchScore < 0.34) ||
-      (context.angleUnstable && relaxedTouchScore < 0.48);
+      commandDistanceBlocked ||
+      partialHandBlocksUnderline ||
+      (
+        context.angleUnstable &&
+        !writingPinchPoseReady &&
+        !sidePinchPoseReady &&
+        relaxedTouchScore < (farMode ? 0.36 : 0.48)
+      );
     const previousBlocked =
+      commandDistanceBlocked ||
       (context.partialHand && fingers.thumbScore < 0.62) ||
       (context.angleUnstable && context.palmFacingScore < 0.08);
-    const swipeBlocked = context.lowConfidence || context.partialHand;
+    const strongOpenPalmShape =
+      openFingerCount === 4 &&
+      weakestFingerScore >= 0.56 &&
+      (
+        context.fingerSpread >= thresholds.openPalmSpreadRatio * 0.68 ||
+        closeFingerOpenPalm
+      );
     const clearBlocked =
       context.lowConfidence ||
-      context.partialHand ||
-      context.angleUnstable ||
-      context.tooFarForCommands ||
-      context.fastMotion ||
-      context.stabilityScore < constants.minStabilityForClear;
+      partialHandBlocksClear ||
+      (context.angleUnstable && !strongOpenPalmShape) ||
+      commandDistanceBlocked ||
+      context.stabilityScore < Math.max(
+        strongOpenPalmShape ? 0.16 : 0.22,
+        constants.minStabilityForClear -
+          (strongOpenPalmShape ? 0.18 : 0.08) -
+          (context.zoneModifier?.stabilityRelax || 0),
+      );
     const extendedCount = [fingers.thumb, fingers.index, fingers.middle, fingers.ring, fingers.pinky].filter(Boolean).length;
     const openPalmSpreadScore = clamp(Math.min(
       extendedCount / 5,
       context.fingerSpread / Math.max(thresholds.openPalmSpreadRatio, 0.001),
     ), 0, 1);
+    const openPalmShapeScore = clamp(
+      (openFingerCount / 4) * 0.48 +
+        averageOpenFingerScore * 0.38 +
+        openPalmSpreadScore * 0.14,
+      0,
+      1,
+    );
     const indexMiddleSeparationScore = clamp(
       scoreThreshold(indexMiddleRatio, 0.08, 0.22) *
         (1 - scoreThreshold(indexMiddleRatio, 0.78, 1.05)),
@@ -627,10 +892,32 @@ export function createAdvancedGestureEngine({
       touchThreshold * 1.08,
       touchThreshold * 1.9,
     );
-    const swipeShapeScore =
-      fingers.indexScore >= 0.45 && fingers.middleScore >= 0.42
+    const forwardTwoFingerReady =
+      fingers.indexDirectReachRatio >= (farMode ? 0.58 : 0.64) &&
+      fingers.middleDirectReachRatio >= (farMode ? 0.56 : 0.62) &&
+      fingers.indexStraightness >= (farMode ? 0.62 : 0.66) &&
+      fingers.middleStraightness >= (farMode ? 0.60 : 0.64) &&
+      fingers.ringScore < 0.72 &&
+      fingers.pinkyScore < 0.72;
+    const forwardTwoFingerScore = forwardTwoFingerReady && indexMiddleSwipeTouch
+      ? clamp(
+          scoreThreshold(fingers.indexDirectReachRatio, 0.54, 1.02) * 0.28 +
+            scoreThreshold(fingers.middleDirectReachRatio, 0.52, 1.0) * 0.28 +
+            scoreThreshold(fingers.indexStraightness, 0.58, 0.9) * 0.17 +
+            scoreThreshold(fingers.middleStraightness, 0.56, 0.88) * 0.17 +
+            nonSwipeFingerScore * 0.10 +
+            (farMode ? 0.08 : 0),
+          0,
+          1,
+        )
+      : 0;
+    const standardSwipeShapeScore =
+      indexMiddleSwipeTouch &&
+      fingers.indexScore >= (farMode ? 0.34 : 0.45) &&
+      fingers.middleScore >= (farMode ? 0.32 : 0.42)
         ? clamp(
-            fingers.indexScore * 0.30 +
+            (farMode ? 0.10 : 0) +
+              fingers.indexScore * 0.30 +
               fingers.middleScore * 0.30 +
               indexMiddleSeparationScore * 0.20 +
               nonSwipeFingerScore * 0.10 +
@@ -639,6 +926,30 @@ export function createAdvancedGestureEngine({
             1,
           )
         : 0;
+    const swipeShapeScore = Math.max(standardSwipeShapeScore, forwardTwoFingerScore);
+    const twoFingerSwipeGuard =
+      forwardTwoFingerReady &&
+      indexMiddleSwipeTouch &&
+      !relaxedThumbIndexTouch;
+    const swipeBlocked =
+      context.lowConfidence ||
+      commandDistanceBlocked ||
+      (
+        context.partialHand &&
+        !(
+          forwardTwoFingerReady &&
+          context.inFrameRatio >= (farMode ? 0.56 : 0.66)
+        )
+      );
+    const pinchSwipeShapeScore = relaxedThumbIndexTouch
+      ? clamp(
+          (thumbIndexTouch ? 0.62 : 0.52) +
+            Math.max(touchScore, relaxedTouchScore * 0.8) * 0.28 +
+            context.inFrameRatio * 0.10,
+          0,
+          1,
+        )
+      : 0;
     const pinkyOnlyScore = rawPinkyOnly
       ? clamp(
           fingers.pinkyScore * 0.72 +
@@ -651,17 +962,33 @@ export function createAdvancedGestureEngine({
     const candidates = {
       mode_toggle: {
         score: pinkyOnlyScore,
-        blockedBy: context.partialHand ? "partial_hand" : "",
+        blockedBy: commandDistanceBlocked ? "too_far" : context.partialHand ? "partial_hand" : "",
       },
       clear_page: {
-        score: rawOpenPalm ? clamp(openPalmSpreadScore * 0.44 + environmentScore * 0.56, 0, 1) : 0,
-        blockedBy: clearBlocked ? "clear_quality_guard" : "",
+        score: rawOpenPalm && !twoFingerSwipeGuard
+          ? clamp(openPalmShapeScore * 0.58 + environmentScore * 0.42, 0, 1)
+          : 0,
+        blockedBy: commandDistanceBlocked
+          ? "too_far"
+          : twoFingerSwipeGuard
+            ? "two_finger_swipe_guard"
+            : clearBlocked
+              ? "clear_quality_guard"
+              : "",
       },
       next_page: {
-        score: swipeShapeScore > 0
+        score: swipeShapeScore > 0 && !pinchApproachIntent
           ? clamp(swipeShapeScore * 0.88 + context.inFrameRatio * 0.12, 0, 1)
           : 0,
-        blockedBy: swipeBlocked ? "swipe_quality_guard" : "",
+        blockedBy: commandDistanceBlocked
+          ? "too_far"
+          : pinchApproachIntent
+            ? "pinch_approach_guard"
+            : rawOpenPalm
+              ? "open_palm_guard"
+              : swipeBlocked
+                ? "swipe_quality_guard"
+                : "",
       },
       underline: {
         score: relaxedThumbIndexTouch
@@ -673,15 +1000,19 @@ export function createAdvancedGestureEngine({
               1,
             )
           : 0,
-        blockedBy: underlineBlocked ? "underline_quality_guard" : "",
+        blockedBy: commandDistanceBlocked
+          ? "too_far"
+          : underlineBlocked
+            ? "underline_quality_guard"
+            : "",
       },
       previous_page: {
         score: rawThumbOnly ? clamp(0.18 + thumbFoldScore * 0.62 + environmentScore * 0.20, 0, 1) : 0,
-        blockedBy: previousBlocked ? "previous_quality_guard" : "",
+        blockedBy: commandDistanceBlocked ? "too_far" : previousBlocked ? "previous_quality_guard" : "",
       },
       pointer: {
         score: clamp(context.inFrameRatio * 0.40 + context.stabilityScore * 0.25 + context.palmFacingScore * 0.35, 0, 1),
-        blockedBy: context.partialHand ? "partial_hand" : context.tooFarForPointer ? "too_far" : "",
+        blockedBy: context.partialHand ? "partial_hand" : "",
       },
     };
 
@@ -697,9 +1028,27 @@ export function createAdvancedGestureEngine({
       thumbIndexRatio3D,
       thumbIndexRatio2D,
       indexMiddleRatio,
+      indexMiddleRatio2D,
+      indexMiddleSwipeTouch,
       indexMiddleSeparationScore,
       swipeShapeScore,
+      standardSwipeShapeScore,
+      forwardTwoFingerReady,
+      forwardTwoFingerScore,
+      twoFingerSwipeGuard,
+      pinchSwipeShapeScore,
       pinchPoseReady,
+      extendedPinchPoseReady,
+      writingPinchPoseReady,
+      sidePinchPoseReady,
+      nearSidePinchIntent,
+      pinchApproachIntent,
+      pinchCenterPalmRatio,
+      indexReachRatio,
+      thumbReachRatio,
+      writingTouchThreshold,
+      sideWritingTouchThreshold,
+      startTouchThreshold,
       thumbIntentScore: fingers.thumbScore,
       nonThumbClosed: 1 - maxNonThumbScore,
       twoFinger: twoFingerReady,
@@ -710,6 +1059,15 @@ export function createAdvancedGestureEngine({
       rawUnderlineStartPinch: relaxedThumbIndexTouch,
       rawTwoFingerSwipeReady: swipeShapeScore >= 0.52,
       rawOpenPalm,
+      openFingerCount,
+      weakestFingerScore,
+      averageOpenFingerScore,
+      openReachCount,
+      fingertipSpanRatio,
+      clusteredFingertips,
+      closeFingerOpenPalm,
+      openPalmShapeScore,
+      strongOpenPalmShape,
       rawPinkyOnly,
       closedFistLike,
       maxNonThumbScore,

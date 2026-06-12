@@ -6,7 +6,10 @@ import { cancelRenderTask } from "../js/presentation/pdf.js";
 import { createPermissionManager } from "../js/presentation/permissions.js";
 import { createPresentationRecorder } from "../js/presentation/recorder.js";
 import { createPresentationSessionController } from "../js/presentation/session.js";
-import { createSpeechRecognitionController } from "../js/presentation/speechAnchor.js";
+import {
+  createLocalWhisperSttController,
+  createSpeechRecognitionController,
+} from "../js/presentation/speechAnchor.js";
 import { createPdfRepository } from "../js/repositories/pdfRepository.js";
 
 function createTrack(kind) {
@@ -248,6 +251,125 @@ describe("speech recognition controller", () => {
     expect(instance.start).toHaveBeenCalledTimes(3);
     controller.stop();
     vi.useRealTimers();
+  });
+});
+
+describe("local whisper STT controller", () => {
+  const jsonResponse = (body, ok = true, status = 200) => ({
+    ok,
+    status,
+    json: vi.fn().mockResolvedValue(body),
+  });
+
+  class AudioContextStub {
+    static processors = [];
+
+    constructor() {
+      this.sampleRate = 48000;
+      this.destination = {};
+    }
+
+    createMediaStreamSource() {
+      return { connect: vi.fn(), disconnect: vi.fn() };
+    }
+
+    createScriptProcessor() {
+      const processor = {
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        onaudioprocess: null,
+      };
+      AudioContextStub.processors.push(processor);
+      return processor;
+    }
+
+    close = vi.fn();
+  }
+
+  it("posts WAV chunks to the local STT server and emits final transcripts", async () => {
+    AudioContextStub.processors = [];
+    const onTranscript = vi.fn();
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, text: "인공지능 발표" }));
+    const mediaDevices = {
+      getUserMedia: vi.fn().mockResolvedValue({
+        getTracks: () => [{ stop: vi.fn() }],
+      }),
+    };
+    const controller = createLocalWhisperSttController({
+      AudioContext: AudioContextStub,
+      fetchImpl,
+      mediaDevices,
+      onTranscript,
+      chunkMs: 10000,
+    });
+
+    expect(controller.start()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const processor = AudioContextStub.processors[0];
+    expect(processor).toBeTruthy();
+    processor.onaudioprocess({
+      inputBuffer: { getChannelData: () => new Float32Array(48000).fill(0.2) },
+      outputBuffer: { getChannelData: () => new Float32Array(4096) },
+    });
+
+    controller.stop();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(String(fetchImpl.mock.calls[2][0])).toBe("http://localhost:5000/stt");
+    expect(onTranscript).toHaveBeenCalledWith("인공지능 발표", true);
+  });
+
+  it("reports local STT server failures", async () => {
+    const onError = vi.fn();
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse({ message: "down" }, false, 503));
+    const controller = createLocalWhisperSttController({
+      AudioContext: AudioContextStub,
+      fetchImpl,
+      mediaDevices: { getUserMedia: vi.fn() },
+      onError,
+    });
+
+    expect(controller.start()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onError).toHaveBeenCalled();
+    expect(controller.isRunning()).toBe(false);
+  });
+
+  it("falls back to the legacy local STT port", async () => {
+    AudioContextStub.processors = [];
+    const fetchImpl = vi.fn()
+      .mockRejectedValueOnce(new Error("port 5000 unavailable"))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const controller = createLocalWhisperSttController({
+      AudioContext: AudioContextStub,
+      fetchImpl,
+      mediaDevices: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [{ stop: vi.fn() }],
+        }),
+      },
+      localEndpoints: ["http://localhost:5000", "http://127.0.0.1:8000"],
+    });
+
+    expect(controller.start()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(String(fetchImpl.mock.calls[0][0])).toBe("http://localhost:5000/health");
+    expect(String(fetchImpl.mock.calls[1][0])).toBe("http://127.0.0.1:8000/health");
+    expect(String(fetchImpl.mock.calls[2][0])).toBe("http://127.0.0.1:8000/warmup");
+    expect(controller.isRunning()).toBe(true);
+    controller.dispose();
   });
 });
 

@@ -17,12 +17,17 @@ document.getElementById("signupForm")?.addEventListener("submit", async (event) 
     if (message) message.textContent = "이름, 이메일, 비밀번호를 모두 입력해주세요.";
     return;
   }
+  if (message) message.textContent = "";
+  try {
+    await AirNoteApi.register({ name, email, password });
+  } catch (error) {
+    console.warn("AirNote signup: backend register failed.", error);
+    if (message) message.textContent = error?.message || "회원가입 정보를 서버에 저장하지 못했습니다.";
+    return;
+  }
   const users = readJson(localStorage, STORAGE_KEYS.signupUsers, [])
     .filter((user) => user.email !== email);
   users.push({ name, email, password });
   writeJson(localStorage, STORAGE_KEYS.signupUsers, users);
-  AirNoteApi.register({ name, email, password }).catch((error) => {
-    console.warn("AirNote signup: backend register failed, local signup preserved.", error);
-  });
   window.location.href = "../index.html";
 });

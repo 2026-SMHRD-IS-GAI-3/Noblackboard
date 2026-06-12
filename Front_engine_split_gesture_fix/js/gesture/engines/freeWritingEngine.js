@@ -106,7 +106,11 @@ export function createFreeWritingEngine(options = {}) {
     const enabled = Boolean(input.enabled && point);
     const rawDistanceRatio = Number.isFinite(input.thumbIndexRatio) ? input.thumbIndexRatio : Infinity;
     const touchRatio = Math.max(Number(thresholds.touchRatio) || 0.5, 0.38);
-    const looseTouch = rawDistanceRatio <= touchRatio * config.continueTouchMultiplier;
+    const continueTouchMultiplier = Math.max(
+      Number(thresholds.underlineContinueTouchMultiplier) || config.continueTouchMultiplier,
+      1,
+    );
+    const looseTouch = rawDistanceRatio <= touchRatio * continueTouchMultiplier;
     const intent = enabled && (Boolean(input.pinchIntent) || (state.active && looseTouch));
     const payload = {
       confidence: input.confidence || 0,
@@ -116,6 +120,7 @@ export function createFreeWritingEngine(options = {}) {
       tool: input.tool || "pen",
       thumbIndexRatio: rawDistanceRatio,
       touchRatio,
+      continueTouchMultiplier,
     };
 
     if (!enabled) {
@@ -164,7 +169,7 @@ export function createFreeWritingEngine(options = {}) {
     state.pinchFrames = 0;
     if (state.active) {
       const gapMs = now - (state.lastSeenAt || now);
-      const releaseLike = rawDistanceRatio > touchRatio * config.continueTouchMultiplier;
+      const releaseLike = rawDistanceRatio > touchRatio * continueTouchMultiplier;
       const graceMs = releaseLike ? config.releaseGraceMs : config.lostGraceMs;
       if (gapMs <= graceMs) {
         state.inGrace = true;

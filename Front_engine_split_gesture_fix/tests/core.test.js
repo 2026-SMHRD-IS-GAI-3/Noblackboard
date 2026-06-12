@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { AirNoteApi } from "../js/core/api.js";
-import { clearLoginState, hasActiveLogin, saveLoginSession } from "../js/core/auth.js";
+import {
+  clearLoginState,
+  hasActiveLogin,
+  saveLoginSession,
+  startLocalGestureSession,
+} from "../js/core/auth.js";
 import { createPresentationStore } from "../js/core/store.js";
 import { readJson, writeJson } from "../js/core/storage.js";
 import { setModalOpen, showToast } from "../js/core/ui.js";
@@ -30,6 +35,22 @@ describe("auth session", () => {
     });
     clearLoginState();
     expect(hasActiveLogin()).toBe(false);
+  });
+
+  it("starts a local gesture session without a backend user id", () => {
+    startLocalGestureSession();
+
+    expect(hasActiveLogin()).toBe(true);
+    expect(localStorage.getItem("airnoteCurrentUserId")).toBeNull();
+    expect(sessionStorage.getItem("airnoteLocalGestureMode")).toBe("true");
+    expect(JSON.parse(localStorage.getItem("airnoteCurrentUser"))).toEqual({
+      userId: null,
+      name: "로컬 제스처 테스트",
+      email: "local-gesture@airnote.test",
+    });
+
+    clearLoginState();
+    expect(sessionStorage.getItem("airnoteLocalGestureMode")).toBeNull();
   });
 });
 

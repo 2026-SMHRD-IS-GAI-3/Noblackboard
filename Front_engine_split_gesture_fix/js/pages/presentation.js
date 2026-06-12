@@ -13,6 +13,10 @@ import * as presentationUi from "../presentation/ui.js";
 import { getStraightenedStroke, smoothStrokePoint } from "../gesture/strokeGeometry.js";
 import { createRecentStrokeDeletionTracker } from "../gesture/recentStrokeDeletion.js";
 import { buildPresentationReport } from "../presentation/report.js";
+import {
+  getDynamicPointerGain,
+  mapDynamicPointerPoint,
+} from "../presentation/pointerMotion.js";
 
 requireActiveLogin("../index.html");
 
@@ -32,6 +36,8 @@ window.AirNoteModules = Object.freeze({
   createSpeechAnchorEngine,
   createSpeechRecognitionController,
   getStraightenedStroke,
+  getDynamicPointerGain,
+  mapDynamicPointerPoint,
   smoothStrokePoint,
   presentationUi,
 });

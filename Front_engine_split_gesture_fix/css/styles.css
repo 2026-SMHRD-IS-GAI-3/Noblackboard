@@ -1835,12 +1835,47 @@ input.input-like {
   touch-action: none;
 }
 
+#sttAnchorOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.stt-anchor-box {
+  position: absolute;
+  min-width: 18px;
+  min-height: 16px;
+  border: 2px solid rgba(34, 197, 94, 0.95);
+  border-radius: 4px;
+  background: rgba(34, 197, 94, 0.14);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
+
+.stt-anchor-box::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  max-width: 260px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: rgba(22, 101, 52, 0.94);
+  color: white;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 #laserPointer {
   --undo-progress: 0;
   position: absolute;
   left: 50%;
   top: 50%;
-  z-index: 3;
+  z-index: 4;
   width: 18px;
   height: 18px;
   border: 2px solid rgba(255, 255, 255, 0.92);
@@ -1866,10 +1901,13 @@ input.input-like {
 }
 
 #laserPointer.is-stroke-preview {
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   border: 3px solid rgba(255, 255, 255, 0.96);
-  background: rgba(225, 29, 72, 0.94);
+  background: conic-gradient(
+    rgba(225, 29, 72, 0.96) calc(var(--stroke-preview-progress, 0) * 1turn),
+    rgba(225, 29, 72, 0.18) 0
+  );
   box-shadow:
     0 0 0 7px rgba(225, 29, 72, 0.18),
     0 0 24px rgba(225, 29, 72, 0.82);
@@ -1884,7 +1922,7 @@ input.input-like {
   opacity: 0.95;
 }
 
-.slide-art > :not(#pdfCanvas):not(#drawCanvas):not(#laserPointer) {
+.slide-art > :not(#pdfCanvas):not(#drawCanvas):not(#laserPointer):not(#sttAnchorOverlay) {
   position: relative;
   z-index: 1;
 }
@@ -2199,6 +2237,30 @@ body.presentation-mode .presentation-page .fullscreen-presenter-ui.is-minimized 
 
 .forgot-password-link {
   text-align: right;
+}
+
+.local-gesture-button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 13px 18px;
+  border: 1px solid var(--purple);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--purple);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.local-gesture-button:hover {
+  background: #f5f1ff;
+}
+
+.local-gesture-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .link-button {
@@ -3530,8 +3592,10 @@ body.presentation-mode .presentation-page #drawCanvas {
 
 #slideArt:fullscreen #pdfCanvas,
 #slideArt:fullscreen #drawCanvas,
+#slideArt:fullscreen #sttAnchorOverlay,
 #slideArt:-webkit-full-screen #pdfCanvas,
-#slideArt:-webkit-full-screen #drawCanvas {
+#slideArt:-webkit-full-screen #drawCanvas,
+#slideArt:-webkit-full-screen #sttAnchorOverlay {
   width: 100% !important;
   height: 100% !important;
   object-fit: fill;

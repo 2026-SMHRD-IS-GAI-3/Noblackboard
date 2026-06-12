@@ -30,6 +30,15 @@ export function saveLoginSession(user, remember = false) {
   sessionStorage.setItem(STORAGE_KEYS.sessionActive, "true");
 }
 
+export function startLocalGestureSession() {
+  localStorage.removeItem(STORAGE_KEYS.currentUserId);
+  saveLoginSession({
+    name: "로컬 제스처 테스트",
+    email: "local-gesture@airnote.test",
+  });
+  sessionStorage.setItem("airnoteLocalGestureMode", "true");
+}
+
 export function clearLoginState() {
   removeKeys(localStorage, [
     STORAGE_KEYS.rememberLogin,
@@ -40,6 +49,7 @@ export function clearLoginState() {
     STORAGE_KEYS.currentUser,
   ]);
   sessionStorage.removeItem(STORAGE_KEYS.sessionActive);
+  sessionStorage.removeItem("airnoteLocalGestureMode");
 }
 
 export function requireActiveLogin(loginHref = "../index.html") {

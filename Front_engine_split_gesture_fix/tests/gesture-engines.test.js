@@ -107,4 +107,66 @@ describe.each([
     expect(engine.isActive()).toBe(false);
     expect(phases).toEqual(["start", "end"]);
   });
+
+  it("keeps an active stroke through small pinch-distance jitter", () => {
+    const phases = [];
+    const engine = createEngine({
+      config: { continueTouchMultiplier: 1.55 },
+      emitPhase: (phase) => {
+        phases.push(phase);
+        return true;
+      },
+    });
+
+    engine.update(createInput({
+      pinchIntent: true,
+      rawPinch: true,
+      thumbIndexRatio: 0.2,
+      now: 100,
+    }));
+
+    const jitter = engine.update(createInput({
+      pinchIntent: false,
+      rawPinch: false,
+      thumbIndexRatio: 0.48,
+      now: 130,
+    }));
+
+    expect(jitter.phase).toBe("move");
+    expect(engine.isActive()).toBe(true);
+    expect(phases).toEqual(["start", "move"]);
+  });
+
+  it("uses the distance-mode continuation multiplier from thresholds", () => {
+    const phases = [];
+    const engine = createEngine({
+      config: { continueTouchMultiplier: 1.55 },
+      emitPhase: (phase) => {
+        phases.push(phase);
+        return true;
+      },
+    });
+
+    engine.update(createInput({
+      pinchIntent: true,
+      rawPinch: true,
+      thumbIndexRatio: 0.2,
+      now: 100,
+    }));
+
+    const farJitter = engine.update(createInput({
+      pinchIntent: false,
+      rawPinch: false,
+      thumbIndexRatio: 0.65,
+      thresholds: {
+        touchRatio: 0.38,
+        underlineContinueTouchMultiplier: 1.8,
+      },
+      now: 130,
+    }));
+
+    expect(farJitter.phase).toBe("move");
+    expect(engine.isActive()).toBe(true);
+    expect(phases).toEqual(["start", "move"]);
+  });
 });

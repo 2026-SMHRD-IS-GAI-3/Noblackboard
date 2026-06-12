@@ -67,7 +67,7 @@ export async function apiForm(path, fields, { signal, timeoutMs } = {}) {
 export const AirNoteApi = Object.freeze({
   getBaseUrl,
   register(user) {
-    return apiJson("/api/users/register", { method: "POST", body: user });
+    return apiJson("/api/users/register", { method: "POST", body: user, timeoutMs: 10000 });
   },
   login(credentials) {
     return apiJson("/api/users/login", { method: "POST", body: credentials });
@@ -92,6 +92,9 @@ export const AirNoteApi = Object.freeze({
   },
   listTextAnchors({ pdfId, pageNo }) {
     return apiJson(`/api/text-anchors?pdfId=${encodeURIComponent(pdfId)}&pageNo=${encodeURIComponent(pageNo)}`);
+  },
+  saveTextAnchor(anchor) {
+    return apiJson("/api/text-anchors", { method: "POST", body: anchor });
   },
   saveAnchorMatchLog(fields) {
     return apiForm("/api/anchor-match/logs", fields);

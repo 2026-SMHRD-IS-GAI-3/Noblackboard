@@ -15,9 +15,12 @@
   const PRESENTATION_RECORDS_KEY = "airnote.presentationRecords";
   const SPEECH_ANCHOR_TTL_MS = 8000;
   const GESTURE_MOVEMENT_GAIN = 1.5;
+  const POINTER_MOVEMENT_MIN_GAIN = 1.2;
+  const POINTER_MOVEMENT_MAX_GAIN = 1.3;
   const MAX_PHRASE_LENGTH = 6;
   const STT_SCORE_THRESHOLD = 0.78;
   const STT_AMBIGUITY_GAP = 0.12;
+  const STT_ANCHOR_BOX_TTL_MS = 6000;
   const ANALYTICS_DB_NAME = "airnote-analytics";
   const ANALYTICS_DB_VERSION = 1;
   const DEFAULT_HIGHLIGHT_WIDTH = 18;
@@ -121,6 +124,7 @@
   let toastTimerId = null;
   let expectedMinutes = Number(expectedTimeSelect?.value || 20);
   let pdfTextAnchors = new Map();
+  let savedTextAnchorPageKeys = new Set();
   let textAnchorSource = "none";
   let textAnchorLoadError = "";
   let activeTextAnchor = null;
@@ -137,6 +141,8 @@
   let lastSavedCalibrationKey = "";
   let currentHighlightWidth = DEFAULT_HIGHLIGHT_WIDTH;
   let debugPanel = null;
+  let sttAnchorOverlay = null;
+  let sttAnchorClearTimer = null;
   let underlineMode = document.querySelector('input[name="underlineMode"]:checked')?.value || "freewriting";
   let permissionStream = null;
   let permissionState = { webcam: false, microphone: false };
@@ -1395,6 +1401,44 @@
     return Math.max(0, Math.min(1, Number(value) || 0));
   }
 
+  function ensureSttAnchorOverlay() {
+    if (sttAnchorOverlay || !slideArt) return sttAnchorOverlay;
+    sttAnchorOverlay = document.createElement("div");
+    sttAnchorOverlay.id = "sttAnchorOverlay";
+    sttAnchorOverlay.setAttribute("aria-hidden", "true");
+    slideArt.appendChild(sttAnchorOverlay);
+    return sttAnchorOverlay;
+  }
+
+  function clearSttAnchorBox() {
+    if (sttAnchorClearTimer) {
+      window.clearTimeout(sttAnchorClearTimer);
+      sttAnchorClearTimer = null;
+    }
+    sttAnchorOverlay?.replaceChildren();
+  }
+
+  function showSttAnchorBox(anchor, { transcript = "", matchedText = "" } = {}) {
+    if (!anchor || Number(anchor.pageNo || currentPage) !== currentPage) return;
+    const overlay = ensureSttAnchorOverlay();
+    if (!overlay) return;
+    clearSttAnchorBox();
+    const box = document.createElement("div");
+    box.className = "stt-anchor-box";
+    const x = clampRatio(anchor.xRatio);
+    const y = clampRatio(anchor.yRatio);
+    const width = clampRatio(anchor.widthRatio || 0.04);
+    const height = clampRatio(anchor.heightRatio || 0.025);
+    box.style.left = `${x * 100}%`;
+    box.style.top = `${y * 100}%`;
+    box.style.width = `${Math.max(0.018, width) * 100}%`;
+    box.style.height = `${Math.max(0.018, height) * 100}%`;
+    box.title = `STT: ${transcript || matchedText || anchor.text || ""}`;
+    box.dataset.label = matchedText || anchor.matchedText || anchor.text || "";
+    overlay.appendChild(box);
+    sttAnchorClearTimer = window.setTimeout(clearSttAnchorBox, STT_ANCHOR_BOX_TTL_MS);
+  }
+
   function average(values) {
     return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
   }
@@ -1411,6 +1455,7 @@
       activeTextAnchorSelectedAt = 0;
       speechAnchorEngine.clear();
       presentationStore.setState({ speechAnchor: null });
+      clearSttAnchorBox();
       renderDebugPanel();
       return null;
     }
@@ -1427,6 +1472,7 @@
     speechAnchorEngine.update(activeTextAnchor);
     presentationStore.setState({ speechAnchor: activeTextAnchor });
     recordPresentationEvent("speech_anchor", activeTextAnchor);
+    showSttAnchorBox(activeTextAnchor, { matchedText: activeTextAnchor.matchedText || activeTextAnchor.text });
     renderDebugPanel();
     return activeTextAnchor;
   }
@@ -1540,6 +1586,17 @@
     if (gestureSession.anchored && gestureSession.anchorPoint) {
       xRatio = gestureSession.anchorPoint.xRatio + (handX - gestureSession.startHand.xRatio) * GESTURE_MOVEMENT_GAIN;
       yRatio = gestureSession.anchorPoint.yRatio + (handY - gestureSession.startHand.yRatio) * GESTURE_MOVEMENT_GAIN;
+    } else {
+      const pointerPoint = window.AirNoteModules.mapDynamicPointerPoint(
+        gestureSession.startHand,
+        { xRatio: handX, yRatio: handY },
+        {
+          minGain: POINTER_MOVEMENT_MIN_GAIN,
+          maxGain: POINTER_MOVEMENT_MAX_GAIN,
+        },
+      );
+      xRatio = pointerPoint.xRatio;
+      yRatio = pointerPoint.yRatio;
     }
 
     const line = getNearestTextLine(clampRatio(xRatio), clampRatio(yRatio)) || gestureSession.currentLine;
@@ -1949,7 +2006,7 @@
         clearPointer();
         return false;
       }
-      drawPointer(point.x, point.y, "stroke-preview");
+      drawPointer(point.x, point.y, "stroke-preview", detail.progress || 0);
       return true;
     }
 
@@ -2087,7 +2144,7 @@
           const first = renderedLine?.start || underlineGesture.points[0];
           const last = renderedLine?.end || underlineGesture.points[underlineGesture.points.length - 1];
           saveBackendAnnotation({
-            toolType: underlineGesture.tool === "highlight" ? "HIGHLIGHT" : "PEN",
+            toolType: underlineGesture.tool === "highlight" ? "HIGHLIGHT" : "UNDERLINE",
             color: underlineGesture.tool === "highlight" ? "#fff176" : DRAWING_COLOR,
             startX: Math.round(first.x),
             startY: Math.round(first.y),
@@ -2371,11 +2428,65 @@
     return createTextAnchorsFromItems(pageNo, textContent.items || [], viewport);
   }
 
+  function createBackendTextAnchorPayload(anchor) {
+    const pdfId = Number(currentPdfId);
+    if (!Number.isFinite(pdfId) || !anchor?.text) return null;
+    const xRatio = clampRatio(anchor.xRatio);
+    const yRatio = clampRatio(anchor.yRatio);
+    const widthRatio = clampRatio(anchor.widthRatio);
+    const heightRatio = clampRatio(anchor.heightRatio);
+    return {
+      pdfId,
+      pageNo: Number(anchor.pageNo),
+      textOriginal: anchor.text,
+      textNormalized: anchor.norm || normalizeText(anchor.text),
+      keywords: (anchor.tokens?.length ? anchor.tokens : tokenize(anchor.text, true)).join(","),
+      xRatio,
+      yRatio,
+      widthRatio,
+      heightRatio,
+      startXRatio: xRatio,
+      startYRatio: yRatio,
+      endXRatio: clampRatio(xRatio + widthRatio),
+      endYRatio: clampRatio(yRatio + heightRatio),
+      coordSystem: "PDF_RATIO",
+      extractSource: "PDFJS",
+      confidence: 1,
+      anchorLevel: String(anchor.kind || "phrase").toUpperCase(),
+      sortOrder: Math.round(Number(anchor.order || 0) * 1000),
+      useYn: "Y",
+    };
+  }
+
+  async function saveFrontendTextAnchors(pageNo, anchors = []) {
+    if (!backendApi?.saveTextAnchor || !currentPdfId || !anchors.length) return;
+    const pageKey = `${currentPdfId}:${pageNo}`;
+    if (savedTextAnchorPageKeys.has(pageKey)) return;
+    savedTextAnchorPageKeys.add(pageKey);
+    const payloads = anchors
+      .filter((anchor) => !anchor.backendAnchor)
+      .map(createBackendTextAnchorPayload)
+      .filter(Boolean);
+    let failedCount = 0;
+    for (let index = 0; index < payloads.length; index += 20) {
+      const chunk = payloads.slice(index, index + 20);
+      const results = await Promise.allSettled(chunk.map((payload) => backendApi.saveTextAnchor(payload)));
+      failedCount += results.filter((result) => result.status === "rejected").length;
+    }
+    if (failedCount > 0) {
+      console.warn(`AirNote presentation: ${failedCount} PDF text anchors failed to save.`);
+    }
+  }
+
   async function loadFrontendPdfTextAnchors(targetMap = new Map(), onlyMissingPages = false) {
     if (!pdfDoc) return targetMap;
     for (let pageNo = 1; pageNo <= totalPage; pageNo += 1) {
       if (onlyMissingPages && (targetMap.get(pageNo) || []).length > 0) continue;
-      targetMap.set(pageNo, await extractFrontendTextAnchorsForPage(pageNo));
+      const anchors = await extractFrontendTextAnchorsForPage(pageNo);
+      targetMap.set(pageNo, anchors);
+      saveFrontendTextAnchors(pageNo, anchors).catch((error) => {
+        console.warn("AirNote presentation: PDF text anchor save failed.", error);
+      });
     }
     return targetMap;
   }
@@ -2386,7 +2497,9 @@
     let totalBackendAnchors = 0;
     for (let pageNo = 1; pageNo <= totalPage; pageNo += 1) {
       const response = await backendApi.listTextAnchors({ pdfId: currentPdfId, pageNo });
-      const rawAnchors = Array.isArray(response?.data) ? response.data : [];
+      const rawAnchors = Array.isArray(response?.data?.anchors)
+        ? response.data.anchors
+        : Array.isArray(response?.data) ? response.data : [];
       const normalizedAnchors = normalizeBackendTextAnchors(pageNo, rawAnchors);
       totalBackendAnchors += normalizedAnchors.length;
       backendMap.set(pageNo, normalizedAnchors);
@@ -2396,10 +2509,12 @@
 
   async function extractPdfTextAnchors() {
     pdfTextAnchors = new Map();
+    savedTextAnchorPageKeys = new Set();
     textAnchorSource = "none";
     textAnchorLoadError = "";
     activeTextAnchor = null;
     activeTextAnchorSelectedAt = 0;
+    clearSttAnchorBox();
     if (!pdfDoc) {
       renderDebugPanel();
       return;
@@ -2585,6 +2700,7 @@
       widthRatio: activeTextAnchor.widthRatio,
       heightRatio: activeTextAnchor.heightRatio,
     });
+    showSttAnchorBox(activeTextAnchor, { transcript, matchedText: best.anchor.text });
     renderDebugPanel();
     return activeTextAnchor;
   }
@@ -2601,12 +2717,24 @@
       return false;
     }
     if (speechStarted) return true;
+    const savedLocalSttEndpoint = localStorage.getItem("airnote.localSttEndpoint");
     speechController = speechController || window.AirNoteModules.createSpeechRecognitionController({
+      provider: "auto",
+      localEndpoint: savedLocalSttEndpoint || "http://localhost:5000",
+      localEndpoints: savedLocalSttEndpoint
+        ? [savedLocalSttEndpoint]
+        : ["http://localhost:5000", "http://127.0.0.1:8000"],
       onTranscript: (transcript, isFinal) => selectActiveTextAnchor(transcript, isFinal),
       onError: (error) => {
         console.warn("AirNote presentation: speech recognition failed.", error);
         const permissionError = error === "not-allowed" || error === "service-not-allowed";
         const deviceError = error === "audio-capture" || error === "language-not-supported";
+        const localError = error === "local-stt-unsupported" ||
+          error === "local-stt-timeout" ||
+          String(error?.message || error || "").toLowerCase().includes("local stt");
+        if (localError) {
+          showToast("Local STT unavailable. Browser fallback will be used if possible.");
+        }
         if (permissionError || deviceError) {
           speechStarted = false;
           if (permissionError) permissionState.microphone = false;
@@ -2620,6 +2748,17 @@
             ? "마이크 권한이 없어 음성 앵커 기능을 사용할 수 없습니다."
             : "마이크 장치를 사용할 수 없어 음성 앵커 기능이 중지되었습니다.");
         }
+      },
+      onStatus: (status) => {
+        if (status?.status === "checking") showToast("Local STT server checking...");
+        if (status?.status === "warming") showToast("Local STT model warming up...");
+        if (status?.status === "running") showToast("Local STT is running.");
+        if (status?.status === "fallback") showToast("Using browser STT fallback.");
+        if (status?.status === "disabled") {
+          speechStarted = false;
+          showToast("STT disabled. Gesture and PDF controls remain available.");
+        }
+        if (status?.status === "transcribed") console.info("AirNote local STT:", status.text);
       },
     });
     if (!speechController.isSupported()) {
@@ -2666,6 +2805,8 @@
       restoreCurrentPageAnnotation();
       clearPointer();
       updatePageIndicator();
+      const visibleAnchor = getValidSpeechAnchor();
+      if (visibleAnchor) showSttAnchorBox(visibleAnchor, { matchedText: visibleAnchor.matchedText || visibleAnchor.text });
       publishPresentationOverlay();
     } catch (error) {
       if (error?.name === "RenderingCancelledException") return;
@@ -2938,6 +3079,7 @@
     saveBackendPageAction(fromPageNo, nextPageNo, direction);
     activeTextAnchor = null;
     activeTextAnchorSelectedAt = 0;
+    clearSttAnchorBox();
     pendingSpeechAnchorKey = "";
     pendingSpeechAnchorCount = 0;
     lastSelectedAnchorOrder = -1;
@@ -3047,6 +3189,7 @@
     laserPointer.classList.toggle("is-stroke-preview", variant === "stroke-preview");
     laserPointer.classList.toggle("is-undo-target", variant === "undo-target");
     laserPointer.style.setProperty("--undo-progress", String(Math.max(0, Math.min(1, progress))));
+    laserPointer.style.setProperty("--stroke-preview-progress", String(Math.max(0, Math.min(1, progress))));
     laserPointer.style.left = `${left}px`;
     laserPointer.style.top = `${top}px`;
     laserPointer.style.opacity = "1";

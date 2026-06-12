@@ -1,6 +1,7 @@
 import { createFreeWritingEngine } from "./gesture/engines/freeWritingEngine.js";
 import { createStraightUnderlineEngine } from "./gesture/engines/straightUnderlineEngine.js";
 import { createAdvancedGestureEngine } from "./gesture/advancedGestureEngine.js";
+import { createPalmEraseGestureTracker } from "./gesture/palmEraseGesture.js";
 import { createSwipeGestureTracker } from "./gesture/swipeGesture.js";
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -22,13 +23,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const LOST_END_MS = 700;
   const COMMAND_COOLDOWN_MS = 320;
   const PREVIOUS_HOLD_MS = 520;
+  const PREVIOUS_GESTURE_GRACE_MS = 180;
   const PREVIOUS_REPEAT_MS = 1200;
   const MODE_TOGGLE_HOLD_MS = 700;
   const MODE_TOGGLE_COOLDOWN_MS = 350;
   const CLEAR_HOLD_MS = 800;
+  const CLEAR_GESTURE_GRACE_MS = 650;
   const NEXT_REPEAT_MS = 1000;
-  const PINCH_CONFIRM_MS = 80;
-  // 통합 발표 페이지에서는 프리라이팅 HTML처럼 핀치가 잡히는 즉시 판서가 시작되어야 한다.
+  const PINCH_CONFIRM_MS = 350;
+  const PINCH_AIM_MOVE_RESET_RATIO = 0.025;
   const UNDERLINE_HOLD_MS = 0;
   const UNDERLINE_LOST_GRACE_MS = 280;
   const UNDERLINE_RELEASE_GRACE_MS = 90;
@@ -71,7 +74,18 @@ document.addEventListener("DOMContentLoaded", () => {
     minDistancePx: 150,
     maxDurationMs: 300,
     minFinalScore: 0.75,
+    armFrames: 3,
+    armMs: 90,
   });
+  const pinchSwipeTracker = createSwipeGestureTracker({
+    minDistancePx: 110,
+    maxDurationMs: 420,
+    minShapeScore: 0.48,
+    minFinalScore: 0.72,
+    armFrames: 3,
+    armMs: 100,
+  });
+  const palmEraseTracker = createPalmEraseGestureTracker();
   let lastCommand = { command: "", at: 0 };
   let lastPointerDiagnosticAt = 0;
   let underlineLastSeenAt = 0;
@@ -105,11 +119,16 @@ document.addEventListener("DOMContentLoaded", () => {
   function createHoldState() {
     return {
       previousStartedAt: 0,
+      previousSeenAt: 0,
       previousLocked: false,
       previousLastAt: 0,
       clearStartedAt: 0,
+      clearSeenAt: 0,
+      clearLastUpdateAt: 0,
+      clearAccumulatedMs: 0,
       clearLocked: false,
       underlineStartedAt: 0,
+      underlineAimPoint: null,
       underlineLocked: false,
       underlineFrames: 0,
       nextLastAt: 0,
@@ -862,12 +881,12 @@ document.addEventListener("DOMContentLoaded", () => {
         freewriting: createFreeWritingEngine({
           emitPhase,
           emitState,
-          config: { continueTouchMultiplier: 1 },
+          config: { continueTouchMultiplier: 1.55 },
         }),
         straight: createStraightUnderlineEngine({
           emitPhase,
           emitState,
-          config: { continueTouchMultiplier: 1 },
+          config: { continueTouchMultiplier: 1.55 },
         }),
       };
     }
@@ -906,6 +925,8 @@ document.addEventListener("DOMContentLoaded", () => {
     smoothedPoint = null;
     gestureEngine.reset();
     swipeTracker.reset();
+    pinchSwipeTracker.reset();
+    palmEraseTracker.reset();
     holdState = createHoldState();
     if (anyStrokeEngineActive()) {
       getPresentationApi()?.handleUnderlineGesture?.({ phase: "end", reason: "gesture_reset" });
@@ -964,6 +985,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const strokeToolEnabled = controlsActive && (currentTool === "pen" || currentTool === "highlight");
     const activeStrokeEngine = getActiveStrokeEngine(strokeMode);
     resetInactiveStrokeEngine(strokeMode);
+    const width = video?.videoWidth || annotationCanvas?.width || 1280;
+    const height = video?.videoHeight || annotationCanvas?.height || 720;
 
     // 단일 웹캠 HTML과 같은 감각을 목표로 한다. 핀치 계열은 presentation.js에서
     // 다시 판단하지 않고 stroke engine이 start/move/bridge/end를 확정한다.
@@ -973,22 +996,93 @@ document.addEventListener("DOMContentLoaded", () => {
     );
     const initialPinchIntent =
       !activeStrokeEngine.isActive() &&
+      !scores.candidates?.underline?.blockedBy &&
+      thresholds.commandDistanceAllowed !== false &&
       scores.rawUnderlineStartPinch &&
-      underlineCandidateScore >= UNDERLINE_MIN_CONFIDENCE;
+      underlineCandidateScore >= (thresholds.underlineStartConfidence || UNDERLINE_MIN_CONFIDENCE);
+    const pinchSwipeEligible =
+      controlsActive &&
+      !activeStrokeEngine.isActive() &&
+      initialPinchIntent &&
+      (scores.pinchSwipeShapeScore || 0) >= (thresholds.pinchSwipeMinShapeScore || 0.48);
+    let pinchSwipeMotionIntent = false;
+    if (pinchSwipeEligible) {
+      const pinchSwipeResult = pinchSwipeTracker.update({
+        point: scores.pinchSwipePoint || point,
+        shapeScore: scores.pinchSwipeShapeScore || 0,
+        now,
+        width,
+        height,
+        minDistancePx: thresholds.pinchSwipeMinDistance,
+        maxVerticalDriftPx: thresholds.swipeMaxVerticalDrift,
+        minShapeScore: thresholds.pinchSwipeMinShapeScore,
+        minFinalScore: thresholds.pinchSwipeMinFinalScore,
+        maxDurationMs: thresholds.pinchSwipeMaxDurationMs,
+      });
+      pinchSwipeMotionIntent =
+        pinchSwipeResult.tracking &&
+        (pinchSwipeResult.distancePx || 0) >= (thresholds.pinchSwipeIntentDistance || 28) &&
+        (pinchSwipeResult.verticalDriftPx || 0) <= thresholds.swipeMaxVerticalDrift;
+
+      if (pinchSwipeResult.fired) {
+        getPresentationApi()?.handleUnderlineGesture?.({ phase: "preview-end" });
+        holdState.underlineFrames = 0;
+        holdState.underlineStartedAt = 0;
+        holdState.underlineAimPoint = null;
+        claim("pinch_swipe_fired");
+        if (now - holdState.nextLastAt >= NEXT_REPEAT_MS && emitCommand("next_page", {
+          handPoint: point,
+          confidence: pinchSwipeResult.finalScore,
+          thresholds,
+          calibrationProfile,
+          swipeVariant: "thumb_index_pinch",
+          ...pinchSwipeResult,
+          repeatIntervalMs: NEXT_REPEAT_MS,
+        }, now)) {
+          commandFired = true;
+          holdState.nextLastAt = now;
+        }
+        return { claimed, fired: commandFired, command: "pinch_swipe", claimReason };
+      }
+
+      if (pinchSwipeMotionIntent) {
+        getPresentationApi()?.handleUnderlineGesture?.({ phase: "preview-end" });
+        claim("pinch_swipe_tracking");
+        return { claimed, fired: false, command: "pinch_swipe", claimReason };
+      }
+    } else {
+      pinchSwipeTracker.reset();
+    }
     if (initialPinchIntent) {
       holdState.underlineFrames += 1;
-      if (!holdState.underlineStartedAt) holdState.underlineStartedAt = now;
+      if (!holdState.underlineStartedAt || !holdState.underlineAimPoint) {
+        holdState.underlineStartedAt = now;
+        holdState.underlineAimPoint = { ...point };
+      } else {
+        const aimMove = Math.hypot(
+          point.xRatio - holdState.underlineAimPoint.xRatio,
+          point.yRatio - holdState.underlineAimPoint.yRatio,
+        );
+        if (aimMove >= PINCH_AIM_MOVE_RESET_RATIO) {
+          holdState.underlineStartedAt = now;
+          holdState.underlineAimPoint = { ...point };
+        }
+      }
     } else if (!activeStrokeEngine.isActive()) {
       holdState.underlineFrames = 0;
       holdState.underlineStartedAt = 0;
+      holdState.underlineAimPoint = null;
     }
     const pinchHoldMs = holdState.underlineStartedAt
       ? Math.max(0, now - holdState.underlineStartedAt)
       : 0;
+    const pinchConfirmMs = Math.max(
+      thresholds.underlineConfirmMs || PINCH_CONFIRM_MS,
+      pinchSwipeEligible ? thresholds.pinchSwipeDecisionMs || 105 : 0,
+    );
     const confirmedPinchIntent =
       initialPinchIntent &&
-      scores.rawUnderlinePinch &&
-      pinchHoldMs >= PINCH_CONFIRM_MS;
+      pinchHoldMs >= pinchConfirmMs;
     const previewPinchIntent =
       strokeToolEnabled &&
       !activeStrokeEngine.isActive() &&
@@ -1005,7 +1099,8 @@ document.addEventListener("DOMContentLoaded", () => {
         strokeMode,
         tool: currentTool,
         holdMs: pinchHoldMs,
-        confirmMs: PINCH_CONFIRM_MS,
+        confirmMs: pinchConfirmMs,
+        progress: Math.min(1, pinchHoldMs / Math.max(1, pinchConfirmMs)),
       });
       claim(`pinch_preview_${strokeMode}`);
       return { claimed, fired: false, command: "pinch_preview", claimReason };
@@ -1043,9 +1138,13 @@ document.addEventListener("DOMContentLoaded", () => {
       holdState.previousStartedAt = 0;
       holdState.previousLocked = false;
       holdState.clearStartedAt = 0;
+      holdState.clearSeenAt = 0;
+      holdState.clearLastUpdateAt = 0;
+      holdState.clearAccumulatedMs = 0;
       holdState.clearLocked = false;
       holdState.underlineFrames = Math.max(holdState.underlineFrames, REQUIRED_COMMAND_FRAMES);
       swipeTracker.reset();
+      pinchSwipeTracker.reset();
       commandFired = Boolean(strokeResult.fired) || commandFired;
       return { claimed, fired: commandFired, command: "pinch_stroke", claimReason };
     }
@@ -1059,41 +1158,97 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
-    if (exclusive.command === "clear_page" && scores.clear >= thresholds.minSensitiveConfidence) {
+    const twoFingerSwipePose =
+      scores.twoFingerSwipeGuard &&
+      (scores.swipeShapeScore || 0) >= (thresholds.swipeMinShapeScore || 0.52);
+    if (twoFingerSwipePose) {
+      holdState.clearStartedAt = 0;
+      holdState.clearSeenAt = 0;
+      holdState.clearLastUpdateAt = 0;
+      holdState.clearAccumulatedMs = 0;
+      holdState.clearLocked = false;
+      palmEraseTracker.reset();
+    }
+    const clearCandidate =
+      !twoFingerSwipePose &&
+      !scores.candidates?.clear_page?.blockedBy &&
+      scores.rawOpenPalm &&
+      scores.clear >= thresholds.minSensitiveConfidence;
+    const clearContinuation =
+      !twoFingerSwipePose &&
+      holdState.clearStartedAt > 0 &&
+      scores.rawOpenPalm &&
+      scores.openFingerCount >= 3 &&
+      scores.context.inFrameRatio >= 0.62 &&
+      !scores.context.tooFarForCommands &&
+      scores.clear >= Math.max(0.38, thresholds.minSensitiveConfidence - 0.22);
+    const palmPoint = normalizedToPresentation(scores.context.palmCenter);
+    const scrubResult = palmEraseTracker.update({
+      point: palmPoint,
+      openPalm: clearCandidate || clearContinuation,
+      now,
+      width,
+      height,
+    });
+    if (clearCandidate || clearContinuation) {
+      holdState.clearSeenAt = now;
+    }
+    const clearWithinGrace =
+      !twoFingerSwipePose &&
+      holdState.clearStartedAt > 0 &&
+      now - holdState.clearSeenAt <= CLEAR_GESTURE_GRACE_MS;
+    if (clearCandidate || clearWithinGrace) {
       claim("clear_hold");
-      if (!holdState.clearStartedAt) holdState.clearStartedAt = now;
-      const holdMs = now - holdState.clearStartedAt;
-      if (!holdState.clearLocked && holdMs >= thresholds.clearHoldMs) {
+      if (!holdState.clearStartedAt) {
+        holdState.clearStartedAt = now;
+        holdState.clearLastUpdateAt = now;
+        holdState.clearAccumulatedMs = 0;
+      }
+      const frameDeltaMs = Math.min(80, Math.max(0, now - holdState.clearLastUpdateAt));
+      holdState.clearLastUpdateAt = now;
+      if (clearCandidate || clearContinuation) {
+        holdState.clearAccumulatedMs += frameDeltaMs;
+      }
+      const holdMs = holdState.clearAccumulatedMs;
+      if (!holdState.clearLocked && (scrubResult.fired || holdMs >= thresholds.clearHoldMs)) {
         commandFired = emitCommand("clear_page", {
-          handPoint: point,
+          handPoint: palmPoint,
           confidence: scores.clear,
           thresholds,
           calibrationProfile,
           holdMs,
+          eraseVariant: scrubResult.fired ? "palm_scrub" : "palm_hold",
+          scrub: scrubResult,
         }, now) || commandFired;
         holdState.clearLocked = true;
+        palmEraseTracker.reset();
       }
     } else {
       holdState.clearStartedAt = 0;
+      holdState.clearSeenAt = 0;
+      holdState.clearLastUpdateAt = 0;
+      holdState.clearAccumulatedMs = 0;
       holdState.clearLocked = false;
+      palmEraseTracker.reset();
     }
 
     const swipeShapeScore = scores.swipeShapeScore || 0;
     const swipeEligible =
       !scores.candidates?.next_page?.blockedBy &&
-      swipeShapeScore >= 0.52;
+      swipeShapeScore >= (thresholds.swipeMinShapeScore || 0.52);
     if (!claimed && swipeEligible) {
       const swipePoint = scores.swipePoint || point;
-      const width = video?.videoWidth || annotationCanvas?.width || 1280;
-      const height = video?.videoHeight || annotationCanvas?.height || 720;
       const swipeResult = swipeTracker.update({
         point: swipePoint,
         shapeScore: swipeShapeScore,
         now,
         width,
         height,
-        minDistancePx: Math.max(150, thresholds.swipeMinDistance || 0),
+        minDistancePx: thresholds.swipeMinDistance,
         maxVerticalDriftPx: thresholds.swipeMaxVerticalDrift,
+        minShapeScore: thresholds.swipeMinShapeScore,
+        minFinalScore: thresholds.swipeMinFinalScore,
+        maxDurationMs: thresholds.swipeMaxDurationMs,
       });
       claim(swipeResult.fired ? "next_swipe_fired" : "next_swipe_tracking");
       if (swipeResult.fired && now - holdState.nextLastAt >= NEXT_REPEAT_MS) {
@@ -1113,7 +1268,17 @@ document.addEventListener("DOMContentLoaded", () => {
       swipeTracker.reset();
     }
 
-    if (!claimed && exclusive.command === "previous_page" && scores.previous >= 0.30) {
+    const previousCandidate =
+      (exclusive.command === "previous_page" || scores.rawThumbOnly) &&
+      !scores.nearSidePinchIntent &&
+      scores.previous >= 0.28;
+    if (previousCandidate) {
+      holdState.previousSeenAt = now;
+    }
+    const previousWithinGrace =
+      holdState.previousStartedAt > 0 &&
+      now - holdState.previousSeenAt <= PREVIOUS_GESTURE_GRACE_MS;
+    if (!claimed && (previousCandidate || previousWithinGrace)) {
       claim("previous_hold");
       if (!holdState.previousStartedAt) holdState.previousStartedAt = now;
       const holdMs = now - holdState.previousStartedAt;
@@ -1130,6 +1295,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } else if (!claimed) {
       holdState.previousStartedAt = 0;
+      holdState.previousSeenAt = 0;
       holdState.previousLocked = false;
     }
 
@@ -1146,6 +1312,10 @@ document.addEventListener("DOMContentLoaded", () => {
     scores.swipePoint = normalizedToPresentation({
       x: (hand[8].x + hand[12].x) / 2,
       y: (hand[8].y + hand[12].y) / 2,
+    });
+    scores.pinchSwipePoint = normalizedToPresentation({
+      x: (hand[4].x + hand[8].x) / 2,
+      y: (hand[4].y + hand[8].y) / 2,
     });
     collectCalibrationSample(hand, context, scores, handConfidence);
     finishCalibrationIfNeeded(now);
@@ -1169,7 +1339,19 @@ document.addEventListener("DOMContentLoaded", () => {
     if (commandState.claimed) {
       updatePointerState(false);
       getPresentationApi()?.updateGestureSession?.(null, false);
-      setStatus(commandState.claimReason?.startsWith("pinch_stroke") ? "판서 제스처 실행 중" : "제스처 명령 실행 중");
+      if (commandState.claimReason === "clear_hold") {
+        const clearProgress = Math.min(
+          100,
+          Math.round((holdState.clearAccumulatedMs / Math.max(1, thresholds.clearHoldMs)) * 100),
+        );
+        setStatus(commandState.fired
+          ? "지우기 완료"
+          : `지우개 준비 ${clearProgress}% · 손바닥을 유지하거나 좌우로 움직이세요`);
+      } else {
+        setStatus(commandState.claimReason?.startsWith("pinch_stroke")
+          ? "판서 제스처 실행 중"
+          : "제스처 명령 실행 중");
+      }
     } else if (pointerOn) {
       const result = getPresentationApi()?.updateGestureSession?.(point, true);
       setStatus(result?.anchored ? "STT 기준 제스처 실행 중" : "손 좌표 제스처 실행 중");
