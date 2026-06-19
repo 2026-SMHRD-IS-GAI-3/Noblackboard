@@ -348,6 +348,14 @@ erDiagram
 
 ## 10. 화면 구성
 
+### 🎬 시연 영상
+
+https://github.com/2026-SMHRD-IS-GAI-3/Noblackboard/raw/main/docs/airnote-demo.mp4
+
+> 영상이 보이지 않으면 ▶ [시연 영상 다운로드/재생](docs/airnote-demo.mp4)
+
+### 핵심 화면
+
 화면설계서 기준 5개 핵심 화면으로 구성됩니다. (사용자 동선: 로그인·회원가입 → 홈/업로드 → 발표 진행 → 마이페이지)
 
 | 화면 ID | 화면 | 설명 |
