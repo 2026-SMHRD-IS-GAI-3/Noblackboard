@@ -13,6 +13,7 @@ from faster_whisper import WhisperModel
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_NAME = "medium"
 MODEL_ROOT = Path(os.getenv("AIRNOTE_STT_MODEL_ROOT", BASE_DIR / "models")).resolve()
+MODEL_REQUIRED_FILES = ("model.bin", "config.json", "tokenizer.json")
 LOCAL_MODEL_ONLY = os.getenv("AIRNOTE_STT_LOCAL_ONLY", "1") != "0"
 PREFERRED_DEVICE = os.getenv("AIRNOTE_STT_DEVICE", "cuda")
 PREFERRED_COMPUTE_TYPE = os.getenv("AIRNOTE_STT_COMPUTE", "int8_float16")
@@ -28,7 +29,7 @@ app = FastAPI(title="AirNote Local STT")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -38,6 +39,28 @@ model_error = None
 model_runtime = {"device": None, "compute_type": None}
 model_load_lock = threading.Lock()
 transcribe_lock = threading.Lock()
+
+
+def is_model_directory(path):
+    return path.is_dir() and all((path / filename).is_file() for filename in MODEL_REQUIRED_FILES)
+
+
+def find_local_model_path():
+    explicit_path = os.getenv("AIRNOTE_STT_MODEL_PATH")
+    if explicit_path:
+        candidate = Path(explicit_path).resolve()
+        if is_model_directory(candidate):
+            return candidate
+
+    if is_model_directory(MODEL_ROOT):
+        return MODEL_ROOT
+
+    if MODEL_ROOT.is_dir():
+        for model_file in MODEL_ROOT.rglob("model.bin"):
+            candidate = model_file.parent
+            if is_model_directory(candidate):
+                return candidate
+    return None
 
 
 def get_model_candidates():
@@ -58,6 +81,13 @@ def get_model():
             return model
 
         MODEL_ROOT.mkdir(parents=True, exist_ok=True)
+        local_model_path = find_local_model_path()
+        model_source = str(local_model_path) if local_model_path else MODEL_NAME
+        if LOCAL_MODEL_ONLY and local_model_path is None:
+            raise RuntimeError(
+                f"faster-whisper medium model files were not found under {MODEL_ROOT}. "
+                f"Required files: {', '.join(MODEL_REQUIRED_FILES)}"
+            )
         errors = []
         for device, compute_type in get_model_candidates():
             try:
@@ -67,11 +97,11 @@ def get_model():
 
                 print("AirNote STT model loading")
                 print(
-                    f"model={MODEL_NAME}, device={device}, "
+                    f"model={MODEL_NAME}, source={model_source}, device={device}, "
                     f"compute_type={compute_type}, model_root={MODEL_ROOT}"
                 )
                 model = WhisperModel(
-                    MODEL_NAME,
+                    model_source,
                     device=device,
                     compute_type=compute_type,
                     download_root=str(MODEL_ROOT),
@@ -101,12 +131,19 @@ def transcribe_file(temp_path):
             task="transcribe",
             beam_size=BEAM_SIZE,
             vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 250},
+            vad_parameters={
+                "min_silence_duration_ms": 250,
+            },
             condition_on_previous_text=False,
             temperature=0.0,
-            no_speech_threshold=0.6,
+            no_speech_threshold=0.45,
         )
-        return list(segments), info
+        segment_list = list(segments)
+        text = " ".join(segment.text.strip() for segment in segment_list).strip()
+        if text:
+            return segment_list, info, "vad"
+
+        return [], info, "vad-empty"
 
 
 @app.get("/health")
@@ -118,6 +155,8 @@ def health_check():
         "model_loaded": model is not None,
         "model_error": model_error,
         "model_root": str(MODEL_ROOT),
+        "resolved_model_path": str(find_local_model_path() or ""),
+        "model_files_found": find_local_model_path() is not None,
         "local_model_only": LOCAL_MODEL_ONLY,
         "preferred_device": PREFERRED_DEVICE,
         "preferred_compute_type": PREFERRED_COMPUTE_TYPE,
@@ -176,13 +215,17 @@ async def stt(audio: UploadFile = File(...)):
             temp.write(raw)
             temp_path = temp.name
 
-        segment_list, info = await run_in_threadpool(transcribe_file, temp_path)
+        segment_list, info, transcribe_mode = await run_in_threadpool(transcribe_file, temp_path)
         text = " ".join(segment.text.strip() for segment in segment_list).strip()
         elapsed_ms = round((time.perf_counter() - started_at) * 1000)
-        print(f"[STT] {byte_size} bytes -> {elapsed_ms}ms -> {text[:80]}")
+        print(
+            f"[STT] {byte_size} bytes -> {elapsed_ms}ms -> "
+            f"mode={transcribe_mode} -> {text[:80]}"
+        )
         return {
             "ok": True,
             "text": text,
+            "transcribe_mode": transcribe_mode,
             "language": info.language,
             "language_probability": info.language_probability,
             "duration": info.duration,

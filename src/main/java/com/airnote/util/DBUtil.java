@@ -28,7 +28,24 @@ public class DBUtil {
 	}
 
 	public static Connection getConnection() throws Exception {
-		return DriverManager.getConnection(props.getProperty("db.url"), props.getProperty("db.username"),
-				props.getProperty("db.password"));
+		String url = setting("AIRNOTE_DB_URL", "db.url");
+		String username = setting("AIRNOTE_DB_USERNAME", "db.username");
+		String password = setting("AIRNOTE_DB_PASSWORD", "db.password");
+		if (url == null || username == null || password == null) {
+			throw new IllegalStateException("AIRNOTE_DB_URL, AIRNOTE_DB_USERNAME, AIRNOTE_DB_PASSWORD 설정이 필요합니다.");
+		}
+		return DriverManager.getConnection(url, username, password);
+	}
+
+	private static String setting(String environmentName, String propertyName) {
+		String environmentValue = System.getenv(environmentName);
+		if (environmentValue != null && !environmentValue.trim().isEmpty()) {
+			return environmentValue.trim();
+		}
+		String propertyValue = props.getProperty(propertyName);
+		if (propertyValue == null || propertyValue.trim().isEmpty()) {
+			return null;
+		}
+		return propertyValue.trim();
 	}
 }

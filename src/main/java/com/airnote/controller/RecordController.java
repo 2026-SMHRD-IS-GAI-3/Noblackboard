@@ -12,6 +12,7 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.Part;
 
 import com.airnote.common.ApiResponse;
+import com.airnote.common.ApiServletSupport;
 import com.airnote.model.RecordImage;
 import com.airnote.service.RecordService;
 import com.google.gson.Gson;
@@ -19,7 +20,10 @@ import com.google.gson.Gson;
 // 발표 화면 캡처 이미지 저장과 저장 이미지 목록 조회를 처리하는 컨트롤러
 
 @WebServlet(urlPatterns = { "/api/records/save-image", "/api/records/images" })
-@MultipartConfig(fileSizeThreshold = 1024 * 1024, maxFileSize = 1024 * 1024 * 10, maxRequestSize = 1024 * 1024 * 20)
+@MultipartConfig(
+		fileSizeThreshold = 1024 * 1024,
+		maxFileSize = 1024 * 1024 * 50,
+		maxRequestSize = 1024 * 1024 * 60)
 public class RecordController extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 
@@ -68,22 +72,22 @@ public class RecordController extends HttpServlet {
 			String pageNoStr = request.getParameter("pageNo");
 
 			if (presentationIdStr == null || presentationIdStr.trim().isEmpty()) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("presentationId가 필요합니다.")));
+				ApiServletSupport.badRequest(response, "presentationId가 필요합니다.");
 				return;
 			}
 
 			if (pageNoStr == null || pageNoStr.trim().isEmpty()) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("pageNo가 필요합니다.")));
+				ApiServletSupport.badRequest(response, "pageNo가 필요합니다.");
 				return;
 			}
 
-			int presentationId = Integer.parseInt(presentationIdStr);
-			int pageNo = Integer.parseInt(pageNoStr);
+			int presentationId = ApiServletSupport.requirePositiveInt("presentationId", presentationIdStr);
+			int pageNo = ApiServletSupport.requirePositiveInt("pageNo", pageNoStr);
 
 			Part imagePart = request.getPart("image");
 
 			if (imagePart == null || imagePart.getSize() == 0) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("image 파일이 필요합니다.")));
+				ApiServletSupport.badRequest(response, "image 파일이 필요합니다.");
 				return;
 			}
 
@@ -91,15 +95,19 @@ public class RecordController extends HttpServlet {
 					pageNo, imagePart);
 
 			if (recordImage == null) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("이미지 저장 실패")));
+				ApiServletSupport.serverError(response, "이미지 저장 실패");
 				return;
 			}
 
-			response.getWriter().write(gson.toJson(ApiResponse.success("발표 화면 이미지 저장 성공", recordImage)));
+			ApiServletSupport.success(response, "발표 화면 이미지 저장 성공", recordImage);
 
 		} catch (Exception e) {
 			e.printStackTrace();
-			response.getWriter().write(gson.toJson(ApiResponse.error("이미지 저장 처리 중 오류가 발생했습니다.")));
+			if (e instanceof IllegalArgumentException) {
+				ApiServletSupport.badRequest(response, e.getMessage());
+			} else {
+				ApiServletSupport.serverError(response, "이미지 저장 처리 중 오류가 발생했습니다.");
+			}
 		}
 	}
 
@@ -109,19 +117,23 @@ public class RecordController extends HttpServlet {
 			String presentationIdStr = request.getParameter("presentationId");
 
 			if (presentationIdStr == null || presentationIdStr.trim().isEmpty()) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("presentationId가 필요합니다.")));
+				ApiServletSupport.badRequest(response, "presentationId가 필요합니다.");
 				return;
 			}
 
-			int presentationId = Integer.parseInt(presentationIdStr);
+			int presentationId = ApiServletSupport.requirePositiveInt("presentationId", presentationIdStr);
 
 			List<RecordImage> images = recordService.getImagesByPresentationId(presentationId);
 
-			response.getWriter().write(gson.toJson(ApiResponse.success("저장 이미지 목록 조회 성공", images)));
+			ApiServletSupport.success(response, "저장 이미지 목록 조회 성공", images);
 
 		} catch (Exception e) {
 			e.printStackTrace();
-			response.getWriter().write(gson.toJson(ApiResponse.error("저장 이미지 목록 조회 중 오류가 발생했습니다.")));
+			if (e instanceof IllegalArgumentException) {
+				ApiServletSupport.badRequest(response, e.getMessage());
+			} else {
+				ApiServletSupport.serverError(response, "저장 이미지 목록 조회 중 오류가 발생했습니다.");
+			}
 		}
 	}
 }

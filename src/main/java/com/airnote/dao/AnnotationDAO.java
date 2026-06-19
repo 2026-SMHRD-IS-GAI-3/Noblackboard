@@ -46,13 +46,13 @@ public class AnnotationDAO {
 			psInsert.setDouble(8, annotation.getEndX());
 			psInsert.setDouble(9, annotation.getEndY());
 
-			if (annotation.getAnchorId() > 0) {
+			if (annotation.getAnchorId() != null && annotation.getAnchorId() > 0) {
 				psInsert.setInt(10, annotation.getAnchorId());
 			} else {
 				psInsert.setNull(10, java.sql.Types.NUMERIC);
 			}
 
-			if (annotation.getMatchLogId() > 0) {
+			if (annotation.getMatchLogId() != null && annotation.getMatchLogId() > 0) {
 				psInsert.setInt(11, annotation.getMatchLogId());
 			} else {
 				psInsert.setNull(11, java.sql.Types.NUMERIC);
@@ -60,7 +60,7 @@ public class AnnotationDAO {
 
 			psInsert.setString(12, annotation.getSourceType());
 
-			if (annotation.getMatchConfidence() > 0) {
+			if (annotation.getMatchConfidence() != null) {
 				psInsert.setDouble(13, annotation.getMatchConfidence());
 			} else {
 				psInsert.setNull(13, java.sql.Types.NUMERIC);
@@ -75,8 +75,7 @@ public class AnnotationDAO {
 			return 0;
 
 		} catch (Exception e) {
-			e.printStackTrace();
-			return 0;
+			throw new IllegalStateException("판서 DB 저장에 실패했습니다.", e);
 		} finally {
 			close(rs);
 			close(psId);
@@ -129,7 +128,7 @@ public class AnnotationDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("판서 DB 조회에 실패했습니다.", e);
 		} finally {
 			close(rs);
 			close(ps);
@@ -158,8 +157,7 @@ public class AnnotationDAO {
 			return ps.executeUpdate();
 
 		} catch (Exception e) {
-			e.printStackTrace();
-			return 0;
+			throw new IllegalStateException("판서 DB 삭제에 실패했습니다.", e);
 		} finally {
 			close(ps);
 			close(conn);

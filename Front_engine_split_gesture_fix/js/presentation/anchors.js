@@ -33,7 +33,8 @@ export function createSpeechAnchorEngine({
       return active;
     },
     getActive(pageNo) {
-      if (!active || now() - selectedAt > ttlMs || (pageNo && active.pageNo !== pageNo)) return null;
+      if (!active || now() - selectedAt > ttlMs) return null;
+      if (pageNo != null && Number(active.pageNo) !== Number(pageNo)) return null;
       return active;
     },
     clear() {

@@ -13,10 +13,10 @@ public class Annotation {
 	private double startY;
 	private double endX;
 	private double endY;
-	private int anchorId;
-	private int matchLogId;
+	private Integer anchorId;
+	private Integer matchLogId;
 	private String sourceType;
-	private double matchConfidence;
+	private Double matchConfidence;
 	private Date createdAt;
 
 	// 삭제 처리용 컬럼
@@ -99,19 +99,19 @@ public class Annotation {
 		this.endY = endY;
 	}
 
-	public int getAnchorId() {
+	public Integer getAnchorId() {
 		return anchorId;
 	}
 
-	public void setAnchorId(int anchorId) {
+	public void setAnchorId(Integer anchorId) {
 		this.anchorId = anchorId;
 	}
 
-	public int getMatchLogId() {
+	public Integer getMatchLogId() {
 		return matchLogId;
 	}
 
-	public void setMatchLogId(int matchLogId) {
+	public void setMatchLogId(Integer matchLogId) {
 		this.matchLogId = matchLogId;
 	}
 
@@ -123,11 +123,11 @@ public class Annotation {
 		this.sourceType = sourceType;
 	}
 
-	public double getMatchConfidence() {
+	public Double getMatchConfidence() {
 		return matchConfidence;
 	}
 
-	public void setMatchConfidence(double matchConfidence) {
+	public void setMatchConfidence(Double matchConfidence) {
 		this.matchConfidence = matchConfidence;
 	}
 

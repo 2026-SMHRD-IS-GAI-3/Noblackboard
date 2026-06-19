@@ -10,6 +10,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import com.airnote.common.ApiResponse;
+import com.airnote.common.ApiServletSupport;
 import com.airnote.model.Presentation;
 import com.airnote.service.PresentationService;
 import com.google.gson.Gson;
@@ -34,19 +35,21 @@ public class PresentationListController extends HttpServlet {
 			String userIdStr = request.getParameter("userId");
 
 			if (userIdStr == null || userIdStr.trim().isEmpty()) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("userId가 필요합니다.")));
+				ApiServletSupport.badRequest(response, "userId가 필요합니다.");
 				return;
 			}
 
-			int userId = Integer.parseInt(userIdStr);
+			int userId = ApiServletSupport.requirePositiveInt("userId", userIdStr);
 
 			List<Presentation> presentationList = presentationService.getPresentationList(userId);
 
-			response.getWriter().write(gson.toJson(ApiResponse.success("발표 목록 조회 성공", presentationList)));
+			ApiServletSupport.success(response, "발표 목록 조회 성공", presentationList);
 
+		} catch (IllegalArgumentException e) {
+			ApiServletSupport.badRequest(response, e.getMessage());
 		} catch (Exception e) {
 			e.printStackTrace();
-			response.getWriter().write(gson.toJson(ApiResponse.error("발표 목록 조회 중 오류가 발생했습니다.")));
+			ApiServletSupport.serverError(response, "발표 목록 조회 중 DB 오류가 발생했습니다.");
 		}
 	}
 }

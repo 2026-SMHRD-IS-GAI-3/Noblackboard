@@ -16,10 +16,13 @@ const DEFAULTS = {
   minAbsoluteCommandPalmSizePx: 10,
   farDistanceAnglePenalty: 2.2,
   distanceCompensationEnabled: true,
-  farGestureEnterDistanceScale: 0.34,
-  farGestureExitDistanceScale: 0.42,
-  farGestureEnterPalmSizePx: 30,
-  farGestureExitPalmSizePx: 36,
+  // 발표 환경(2m~3m)에서 손이 캘리브레이션 대비 40~60%로 작아진다.
+  // 기존 0.34는 거의 닿지 않는 임계값이라 farMode가 실제로 켜지지 않았다.
+  // 0.55로 올려 1.5m 정도부터 farMode가 진입하고, 0.65에서 빠져나오게 한다(히스테리시스 유지).
+  farGestureEnterDistanceScale: 0.55,
+  farGestureExitDistanceScale: 0.65,
+  farGestureEnterPalmSizePx: 45,
+  farGestureExitPalmSizePx: 54,
   farTouchRatioMultiplier: 1.16,
   farUnderlineStartMultiplier: 1.18,
   farUnderlineContinueMultiplier: 1.8,
@@ -264,9 +267,7 @@ export function createAdvancedGestureEngine({
       stabilityRelax: Math.max(zone.stabilityRelax || 0, rawZoneModifier.stabilityRelax || 0),
       smoothingBoost: Math.max(zone.smoothingBoost || 0, rawZoneModifier.smoothingBoost || 0),
     };
-    const effectivePartialHandThreshold = Math.min(
-      effectiveZoneModifier.partialHandThreshold,
-    );
+    const effectivePartialHandThreshold = effectiveZoneModifier.partialHandThreshold;
     const profile = getCalibrationProfile();
     const minPalmFacingScore = profile?.palmFacingScore
       ? clamp(profile.palmFacingScore * 0.55, 0.12, constants.minPalmFacingForSensitive)
@@ -329,11 +330,14 @@ export function createAdvancedGestureEngine({
       : 0;
     const sensitiveBoost = context.zoneModifier?.sensitiveConfidenceBoost || 0;
     const farMode = context.distanceCompensation?.active === true;
+    // ultraFar는 farMode 안에서 한 단계 더 멀어진 상태.
+    // 기존 minCommandDistanceScale*1.8=0.144는 사실상 도달 불가능해서 사용된 적이 없었다.
+    // farMode 진입(0.55)의 약 60% 지점인 0.33을 기준으로 ultraFar를 켠다.
     const ultraFarMode =
       farMode &&
       (
-        context.distanceScale <= constants.minCommandDistanceScale * 1.8 ||
-        context.palmSizePx <= constants.minAbsoluteCommandPalmSizePx * 1.8
+        context.distanceScale <= 0.33 ||
+        context.palmSizePx <= 28
       );
     const minCommandConfidence = context.lowConfidence || context.partialHand
       ? (ultraFarMode ? 0.64 : farMode ? 0.70 : 0.76)

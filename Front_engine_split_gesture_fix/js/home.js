@@ -1,4 +1,9 @@
 ﻿(() => {
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+
   const pdfRepository = window.AirNoteCore.createPdfRepository();
   const api = window.AirNoteCore.AirNoteApi;
   const CURRENT_KEY = window.AirNoteCore.STORAGE_KEYS.currentPdf;
@@ -29,24 +34,30 @@
     statusEl.classList.toggle("error", isError);
   }
 
+  async function getPdfPageCount(file) {
+    if (!window.pdfjsLib) throw new Error("PDF 페이지 분석 모듈을 불러오지 못했습니다.");
+    const data = await file.arrayBuffer();
+    const documentTask = window.pdfjsLib.getDocument({ data });
+    const document = await documentTask.promise;
+    const pageCount = document.numPages;
+    await document.destroy();
+    return pageCount;
+  }
+
   async function savePdf(file) {
     const id = `pdf-${Date.now()}`;
-    let backendPdf = null;
     const userId = window.AirNoteCore.getCurrentUser().userId;
-    if (userId) {
-      try {
-        const response = await api.uploadDocument({ userId, file });
-        backendPdf = response.data;
-      } catch (error) {
-        console.warn("AirNote home: backend PDF upload failed, using local PDF only.", error);
-      }
-    }
+    if (!userId) throw new Error("로그인 정보가 없어 PDF를 서버에 저장할 수 없습니다.");
+    const pageCount = await getPdfPageCount(file);
+    const response = await api.uploadDocument({ userId, file, pageCount });
+    const backendPdf = response.data;
+    if (!backendPdf?.pdfId) throw new Error("서버가 pdfId를 반환하지 않았습니다.");
     const payload = {
       id,
       pdfId: backendPdf?.pdfId || null,
       name: file.name,
       serverFileName: backendPdf?.fileName || "",
-      pageCount: backendPdf?.pageCount || null,
+      pageCount: backendPdf?.pageCount || pageCount,
       type: file.type || "application/pdf",
       size: file.size,
       updatedAt: new Date().toISOString(),
@@ -239,6 +250,16 @@
     if (!isPdf) {
       input.value = "";
       setStatus("PDF 파일만 업로드할 수 있습니다.", true);
+      return;
+    }
+    if (file.name.length > 255) {
+      input.value = "";
+      setStatus("PDF 파일명은 255자 이하여야 합니다.", true);
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      input.value = "";
+      setStatus("PDF 파일은 최대 50MB까지 업로드할 수 있습니다.", true);
       return;
     }
 

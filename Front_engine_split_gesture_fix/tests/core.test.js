@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AirNoteApi } from "../js/core/api.js";
+import { AirNoteApi, AirNoteApiError } from "../js/core/api.js";
 import {
   clearLoginState,
   hasActiveLogin,
@@ -24,10 +24,12 @@ describe("core storage", () => {
 
 describe("auth session", () => {
   it("stores only non-password current user data", () => {
+    sessionStorage.setItem("airnoteLocalGestureMode", "true");
     saveLoginSession({ userId: 1, name: "Tester", email: "air@note", password: "secret" }, true);
     expect(hasActiveLogin()).toBe(true);
     expect(localStorage.getItem("airnoteCurrentUserPassword")).toBeNull();
     expect(localStorage.getItem("airnoteCurrentUserId")).toBe("1");
+    expect(sessionStorage.getItem("airnoteLocalGestureMode")).toBeNull();
     expect(JSON.parse(localStorage.getItem("airnoteCurrentUser"))).toEqual({
       userId: 1,
       name: "Tester",
@@ -90,6 +92,69 @@ describe("backend API client", () => {
       body: JSON.stringify({ userId: 1, version: 2, palmSize: 0.12 }),
     }));
     delete window.AIRNOTE_API_BASE_URL;
+  });
+
+  it("uses query parameters to end a presentation", async () => {
+    window.AIRNOTE_API_BASE_URL = "http://example.test/AirNote_Backend";
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      message: "ended",
+      data: null,
+    }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    await AirNoteApi.endPresentation(12);
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://example.test/AirNote_Backend/api/presentations/end?presentationId=12",
+      expect.objectContaining({ method: "POST" }),
+    );
+    delete window.AIRNOTE_API_BASE_URL;
+  });
+
+  it("posts annotations as URL encoded fields", async () => {
+    window.AIRNOTE_API_BASE_URL = "http://example.test/AirNote_Backend";
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      data: { annotationId: 7 },
+    }), {
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    await AirNoteApi.saveAnnotation({
+      presentationId: 3,
+      pageNo: 2,
+      tool: "POINTER",
+      source: "MANUAL",
+    });
+
+    const [, options] = fetch.mock.calls[0];
+    expect(options.headers["Content-Type"]).toContain("application/x-www-form-urlencoded");
+    expect(options.body.get("presentationId")).toBe("3");
+    expect(options.body.get("pageNo")).toBe("2");
+    delete window.AIRNOTE_API_BASE_URL;
+  });
+
+  it("rejects invalid server IDs before sending a request", () => {
+    globalThis.fetch = vi.fn();
+
+    expect(() => AirNoteApi.getPresentationDetail(0)).toThrow(AirNoteApiError);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("resolves backend image paths against the API origin", () => {
+    window.AIRNOTE_API_BASE_URL = "http://api.example.test:8090/AirNote_Backend";
+
+    expect(AirNoteApi.resolveAssetUrl("/AirNote_Backend/api/records/files/a.png"))
+      .toBe("http://api.example.test:8090/AirNote_Backend/api/records/files/a.png");
+
+    delete window.AIRNOTE_API_BASE_URL;
+  });
+
+  it("keeps proxied image paths on the frontend origin", () => {
+    expect(AirNoteApi.resolveAssetUrl("/AirNote_Backend/api/records/files/a.png"))
+      .toBe(`${window.location.origin}/AirNote_Backend/api/records/files/a.png`);
   });
 });
 

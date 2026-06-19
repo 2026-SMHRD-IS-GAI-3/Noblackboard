@@ -10,6 +10,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import com.airnote.common.ApiResponse;
+import com.airnote.common.ApiServletSupport;
 import com.airnote.service.PresentationService;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -43,8 +44,8 @@ public class PresentationEndController extends HttpServlet {
 		try {
 			Integer presentationId = getPresentationId(request);
 
-			if (presentationId == null || presentationId == 0) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("presentationId가 필요합니다.")));
+			if (presentationId == null || presentationId <= 0) {
+				ApiServletSupport.badRequest(response, "presentationId가 필요합니다.");
 				return;
 			}
 
@@ -54,14 +55,16 @@ public class PresentationEndController extends HttpServlet {
 				JsonObject data = new JsonObject();
 				data.addProperty("presentationId", presentationId);
 
-				response.getWriter().write(gson.toJson(ApiResponse.success("발표 종료 성공", data)));
+				ApiServletSupport.success(response, "발표 종료 성공", data);
 			} else {
-				response.getWriter().write(gson.toJson(ApiResponse.error("발표 종료 실패")));
+				ApiServletSupport.notFound(response, "발표 정보를 찾을 수 없습니다.");
 			}
 
+		} catch (com.google.gson.JsonParseException | NumberFormatException e) {
+			ApiServletSupport.badRequest(response, "발표 종료 요청값을 확인해주세요.");
 		} catch (Exception e) {
 			e.printStackTrace();
-			response.getWriter().write(gson.toJson(ApiResponse.error("발표 종료 처리 중 오류가 발생했습니다.")));
+			ApiServletSupport.serverError(response, "발표 종료 중 DB 오류가 발생했습니다.");
 		}
 	}
 

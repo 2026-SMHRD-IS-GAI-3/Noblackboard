@@ -44,8 +44,7 @@ public class RecordDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
-			return 0;
+			throw new IllegalStateException("저장 이미지 DB 등록에 실패했습니다.", e);
 		}
 
 		return recordImageId;
@@ -80,7 +79,7 @@ public class RecordDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("저장 이미지 DB 조회에 실패했습니다.", e);
 		}
 
 		return imageList;

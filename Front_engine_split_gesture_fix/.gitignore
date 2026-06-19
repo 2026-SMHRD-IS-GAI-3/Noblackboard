@@ -13,6 +13,11 @@ airnote-stt/.venv/
 airnote-stt/models/
 airnote-stt/cuda-runtime/
 airnote-stt/*.log
+_archive/legacy-stt/airnote-stt/.venv/
+_archive/legacy-stt/airnote-stt/models/
+_archive/legacy-stt/airnote-stt/cuda-runtime/
+_archive/legacy-stt/airnote-stt/*.log
+_archive/legacy-stt/airnote-stt/**/__pycache__/
 
 # Python caches
 __pycache__/

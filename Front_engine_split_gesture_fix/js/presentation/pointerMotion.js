@@ -1,6 +1,6 @@
 export function getDynamicPointerGain(distanceRatio, {
-  minGain = 1.2,
-  maxGain = 1.3,
+  minGain = 1.8,
+  maxGain = 1.8,
   accelerationStart = 0.025,
   fullGainDistance = 0.22,
 } = {}) {

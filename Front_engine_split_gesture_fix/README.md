@@ -121,11 +121,19 @@ Make sure `run_all.bat` is running and that the STT server window shows Uvicorn 
 
 Close the other program using port `5000`, then run `run_all.bat` again.
 
-## Legacy `airnote-stt` Folder
+## Archived Legacy Files
 
-The new runtime path is `stt_server`. The frontend no longer depends on `airnote-stt`.
+The active STT runtime path is `stt_server`. The frontend no longer depends on
+the old STT implementation, which is preserved at:
 
-Do not delete `airnote-stt` until you have verified on your machine that:
+```text
+..\중복파일백업\legacy-stt\airnote-stt
+```
+
+Old rehearsal launchers and unused source menu images are also preserved under
+`..\중복파일백업`. They are not used by the current frontend.
+
+Do not delete the archived STT folder until you have verified on your machine that:
 
 - `setup.bat` completes
 - `run_all.bat` starts both servers

@@ -12,10 +12,19 @@ document.addEventListener("DOMContentLoaded", () => {
   const gestureHandStatus = document.getElementById("gestureHandStatus");
   const gestureReverseHandInput = document.getElementById("gestureReverseHand");
 
-  const MEDIAPIPE_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
-  const WASM_URL = `${MEDIAPIPE_URL}/wasm`;
-  const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-  const CALIBRATION_DURATION_MS = 2000;
+  const MEDIAPIPE_CDN_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+  const MEDIAPIPE_CDN_WASM_URL = `${MEDIAPIPE_CDN_URL}/wasm`;
+  const MEDIAPIPE_CDN_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+
+  // 로컬 vendor 파일 존재 여부를 미리 확인 (비동기 Promise — loadMediaPipe 내에서 await)
+  const _localBase = new URL("../vendor/mediapipe", import.meta.url).href;
+  const _localWasmBase = `${_localBase}/wasm`;
+  const _localModelUrl = `${_localBase}/hand_landmarker.task`;
+  const _localModuleUrl = `${_localBase}/vision_bundle.mjs`;
+  const _localAvailablePromise = fetch(`${_localWasmBase}/vision_wasm_internal.js`, { method: "HEAD" })
+    .then((r) => r.ok)
+    .catch(() => false);
+  const CALIBRATION_DURATION_MS = 3000;
   const MIN_CALIBRATION_SAMPLES = 12;
   const POINTER_ON_FRAMES = 3;
   const POINTER_OFF_FRAMES = 3;
@@ -70,6 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let modeToggleLocked = false;
   let lastModeToggleAt = 0;
   let handSettings = loadHandSettings();
+  const HANDEDNESS_MIN_CONFIDENCE = 0.65;
   const swipeTracker = createSwipeGestureTracker({
     minDistancePx: 150,
     maxDurationMs: 300,
@@ -144,11 +154,12 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const parsed = JSON.parse(localStorage.getItem(GESTURE_HAND_STORAGE_KEY) || "null");
       return {
-        micHand: parsed?.micHand === "Right" ? "Right" : "Left",
+        // 기본값: 마이크 손의 MediaPipe 라벨 = "Right" (실측 기준).
+        micHand: parsed?.micHand === "Left" ? "Left" : "Right",
         reverse: Boolean(parsed?.reverse),
       };
     } catch {
-      return { micHand: "Left", reverse: false };
+      return { micHand: "Right", reverse: false };
     }
   }
 
@@ -227,7 +238,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function getCurrentUserEmail() {
-    return localStorage.getItem("airnoteCurrentUserEmail") || "example@google.com";
+    try {
+      const stored = JSON.parse(localStorage.getItem("airnoteCurrentUser") || "null");
+      return stored?.email || "example@google.com";
+    } catch {
+      return "example@google.com";
+    }
   }
 
   function getCalibrationKey() {
@@ -376,8 +392,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function loadMediaPipeModule() {
     if (HandLandmarker && FilesetResolver) return true;
+    const useLocal = await _localAvailablePromise;
+    if (useLocal) {
+      try {
+        const vision = await import(_localModuleUrl);
+        HandLandmarker = vision.HandLandmarker;
+        FilesetResolver = vision.FilesetResolver;
+        return true;
+      } catch (error) {
+        console.warn("MediaPipe local vendor import failed. Falling back to CDN.", error);
+      }
+    }
     try {
-      const vision = await import(MEDIAPIPE_URL);
+      const vision = await import(MEDIAPIPE_CDN_URL);
       HandLandmarker = vision.HandLandmarker;
       FilesetResolver = vision.FilesetResolver;
       return true;
@@ -390,9 +417,13 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function createHandLandmarker(delegate) {
-    const filesetResolver = await FilesetResolver.forVisionTasks(WASM_URL);
+    const useLocal = await _localAvailablePromise;
+    const wasmUrl = useLocal ? _localWasmBase : MEDIAPIPE_CDN_WASM_URL;
+    const modelUrl = useLocal ? _localModelUrl : MEDIAPIPE_CDN_MODEL_URL;
+    if (useLocal) console.info("AirNote: MediaPipe 로컬 vendor 사용");
+    const filesetResolver = await FilesetResolver.forVisionTasks(wasmUrl);
     return HandLandmarker.createFromOptions(filesetResolver, {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate },
+      baseOptions: { modelAssetPath: modelUrl, delegate },
       runningMode: "VIDEO",
       numHands: 2,
       minHandDetectionConfidence: 0.38,
@@ -490,14 +521,49 @@ document.addEventListener("DOMContentLoaded", () => {
   function getTargetHand(result) {
     if (!result?.landmarks?.length) return null;
     const targetHandLabel = getPointerTargetHandLabel();
-    const index = result.landmarks.findIndex((_, handIndex) => getHandLabel(result, handIndex) === targetHandLabel);
-    const selectedIndex = index >= 0 ? index : 0;
+    const micHandLabel = targetHandLabel === "Right" ? "Left" : "Right";
+    const count = result.landmarks.length;
+
+    if (count === 1) {
+      // 손 하나만 감지: micHandLabel이면 마이크 손이므로 차단.
+      // 그 외(targetHandLabel 또는 Unknown)는 통과 — 핀치 중 라벨 오분류 대응.
+      const label = getHandLabel(result, 0);
+      if (label === micHandLabel) return null;
+      return {
+        landmarks: result.landmarks[0],
+        label,
+        targetHandLabel,
+        targetMatched: label === targetHandLabel,
+        confidence: result?.handednesses?.[0]?.[0]?.score ?? 1,
+      };
+    }
+
+    // 두 손 감지: micHandLabel 손은 무조건 제외.
+    // 남은 손 중 targetHandLabel 우선, 없으면 Unknown(핀치 오분류) 폴백.
+    // 동일 라벨이 여러 개면 신뢰도가 높은 손 선택.
+    let targetIndex = -1;
+    let targetScore = -1;
+    let fallbackIndex = -1;
+    let fallbackScore = -1;
+    for (let i = 0; i < count; i += 1) {
+      const label = getHandLabel(result, i);
+      if (label === micHandLabel) continue;
+      const score = result?.handednesses?.[i]?.[0]?.score ?? 0;
+      if (label === targetHandLabel) {
+        if (score > targetScore) { targetIndex = i; targetScore = score; }
+      } else {
+        if (score > fallbackScore) { fallbackIndex = i; fallbackScore = score; }
+      }
+    }
+    const chosen = targetIndex !== -1 ? targetIndex : fallbackIndex;
+    if (chosen === -1) return null;
+    const chosenLabel = getHandLabel(result, chosen);
     return {
-      landmarks: result.landmarks[selectedIndex],
-      label: getHandLabel(result, selectedIndex),
+      landmarks: result.landmarks[chosen],
+      label: chosenLabel,
       targetHandLabel,
-      targetMatched: index >= 0,
-      confidence: result?.handednesses?.[selectedIndex]?.[0]?.score ?? 1,
+      targetMatched: chosenLabel === targetHandLabel,
+      confidence: result?.handednesses?.[chosen]?.[0]?.score ?? 1,
     };
   }
 
@@ -528,171 +594,6 @@ document.addEventListener("DOMContentLoaded", () => {
       x: average(indexes.map((index) => hand[index].x)),
       y: average(indexes.map((index) => hand[index].y)),
     };
-  }
-
-  function getHandContext(hand, now) {
-    const palmCenter = getPalmCenter(hand);
-    const palmSize = average([
-      distance3D(hand[0], hand[5]),
-      distance3D(hand[0], hand[9]),
-      distance3D(hand[0], hand[17]),
-      distance3D(hand[5], hand[17]),
-    ]);
-    const sourceWidth = video?.videoWidth || annotationCanvas?.width || 1280;
-    const sourceHeight = video?.videoHeight || annotationCanvas?.height || 720;
-    const palmSizePx = palmSize * Math.min(sourceWidth, sourceHeight);
-    const spread = average([
-      distance3D(hand[8], hand[12]),
-      distance3D(hand[12], hand[16]),
-      distance3D(hand[16], hand[20]),
-    ]) / Math.max(palmSize, 0.001);
-    const edgeMargin = Math.min(...hand.map((point) => Math.min(point.x, point.y, 1 - point.x, 1 - point.y)));
-    const palmFacingScore = clamp(Math.abs((hand[5].x - hand[17].x) / Math.max(palmSize, 0.001)), 0, 1);
-    let motion = 0;
-    if (previousPalmCenter && previousPalmTime) {
-      const elapsed = Math.max(1, now - previousPalmTime);
-      motion = Math.hypot(palmCenter.x - previousPalmCenter.x, palmCenter.y - previousPalmCenter.y) * (1000 / elapsed);
-    }
-    previousPalmCenter = palmCenter;
-    previousPalmTime = now;
-    return {
-      palmCenter,
-      palmSize,
-      palmSizePx,
-      fingerSpread: spread,
-      palmFacingScore,
-      stabilityScore: clamp(1 - motion / 1.1, 0, 1),
-      fastMotion: motion > 0.55,
-      partialHand: edgeMargin < 0.01,
-      edgeMargin,
-      screenZone: palmCenter.y < 0.25 ? "top" : palmCenter.y > 0.75 ? "bottom" : "center",
-      inFrameRatio: hand.filter((point) => point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1).length / hand.length,
-    };
-  }
-
-  function getFingerScore(hand, mcp, pip, dip, tip) {
-    const anglePip = angle3D(hand[mcp], hand[pip], hand[dip]);
-    const angleDip = angle3D(hand[pip], hand[dip], hand[tip]);
-    const distanceRatio = distance3D(hand[0], hand[tip]) / Math.max(distance3D(hand[0], hand[pip]), 0.001);
-    return average([
-      scoreRange(anglePip, 120, 158),
-      scoreRange(angleDip, 115, 155),
-      scoreRange(distanceRatio, 1.02, 1.2),
-    ]);
-  }
-
-  function getAdaptiveThresholds(context) {
-    const referencePalm = calibrationProfile?.palmSize || context.palmSize || 0.12;
-    const distanceScale = clamp(context.palmSize / Math.max(referencePalm, 0.001), 0.7, 1.35);
-    // 기존 캘리브레이션 값이 너무 작게 저장되어 있으면 통합 페이지에서 핀치가 거의 잡히지 않는다.
-    // 프리라이팅 HTML의 감각을 우선하기 위해 최소 터치 기준을 0.42로 보장한다.
-    const touchRatio = Number(calibrationProfile?.touchDistanceRatio || DEFAULT_TOUCH_RATIO);
-    // 포인터는 잡히는데 명령만 안 잡히는 주된 원인은 명령 전용 confidence를
-    // 거리/가장자리/흔들림으로 과하게 올린 것이었다. 실제 발표 UX에서는
-    // 손이 인식되는 상태면 명령도 우선 후보로 올리고, 오작동은 hold/cooldown으로 막는다.
-    return {
-      touchRatio: clamp(touchRatio * (1 + (1 - distanceScale) * 0.08), 0.22, 0.48),
-      minCommandConfidence: context.partialHand ? 0.76 : MIN_COMMAND_CONFIDENCE,
-      minSensitiveConfidence: context.partialHand ? 0.82 : MIN_SENSITIVE_CONFIDENCE,
-      previousHoldMs: PREVIOUS_HOLD_MS,
-      clearHoldMs: CLEAR_HOLD_MS,
-    };
-  }
-
-  function scoreGestures(hand, context, thresholds) {
-    const index = getFingerScore(hand, 5, 6, 7, 8);
-    const middle = getFingerScore(hand, 9, 10, 11, 12);
-    const ring = getFingerScore(hand, 13, 14, 15, 16);
-    const pinky = getFingerScore(hand, 17, 18, 19, 20);
-    const palmSize = Math.max(context.palmSize, 0.001);
-    const thumbDistance = distance3D(hand[4], hand[8]);
-    const thumbIndexRatio = thumbDistance / palmSize;
-    const indexMiddleRatio = distance3D(hand[8], hand[12]) / palmSize;
-    const touchScore = clamp(1 - thumbIndexRatio / Math.max(thresholds.touchRatio, 0.001), 0, 1);
-
-    // 업로드된 단일 HTML 테스트 파일의 엄지 로직을 통합형 코드에 맞게 단순 이식한 버전.
-    // 기존 x축 벌림 기준만 쓰면 '엄지 위로 세우기'가 거의 잡히지 않아 이전 페이지가 먹지 않았다.
-    const thumbMCP = hand[2];
-    const thumbIP = hand[3];
-    const thumbTIP = hand[4];
-    const indexMCP = hand[5];
-    const middleMCP = hand[9];
-    const thumbAngle = angle3D(thumbMCP, thumbIP, thumbTIP);
-    const thumbLengthRatio = distance3D(thumbMCP, thumbTIP) / palmSize;
-    const thumbSpreadRatio = distance3D(thumbTIP, indexMCP) / palmSize;
-    const thumbSideScore = average([
-      scoreRange(thumbAngle, 96, 150),
-      scoreRange(thumbLengthRatio, 0.28, 0.56),
-      scoreRange(thumbSpreadRatio, 0.34, 0.78),
-    ]);
-    const tipAboveIpRatio = (thumbIP.y - thumbTIP.y) / palmSize;
-    const tipAboveMcpRatio = (thumbMCP.y - thumbTIP.y) / palmSize;
-    const tipAbovePalmRatio = (middleMCP.y - thumbTIP.y) / palmSize;
-    const thumbUpScore = clamp(
-      scoreRange(tipAboveIpRatio, 0.02, 0.32) * 0.26 +
-        scoreRange(tipAboveMcpRatio, 0.10, 0.58) * 0.34 +
-        scoreRange(tipAbovePalmRatio, 0.06, 0.58) * 0.20 +
-        scoreRange(thumbLengthRatio, 0.28, 0.56) * 0.20,
-      0,
-      1
-    );
-    const thumbIntentScore = Math.max(thumbSideScore, thumbUpScore);
-    const nonThumbClosed = 1 - Math.max(index, middle, ring, pinky);
-
-    // 통합 페이지에서는 PDF 캔버스/웹캠 preview가 함께 돌기 때문에 landmark score가
-    // 단일 웹캠 HTML보다 낮게 나온다. 포인터가 잡히는 손이면 명령 후보도 더 적극적으로 올린다.
-    const twoFinger = index >= 0.55 && middle >= 0.45 && ring < 0.85 && pinky < 0.85;
-    const openPalm = Math.min(index, middle, ring, pinky) >= 0.42
-      ? average([index, middle, ring, pinky, context.fingerSpread > 0.45 ? 1 : 0.62])
-      : 0;
-    const pointer = index * (1 - Math.max(middle, ring, pinky) * 0.45);
-    const relaxedPinch = thumbIndexRatio <= thresholds.touchRatio;
-    const strongPinch = thumbIndexRatio <= thresholds.touchRatio * 0.82;
-    const underlineScore = relaxedPinch
-      ? clamp((strongPinch ? 0.62 : 0.48) + touchScore * 0.30 + context.inFrameRatio * 0.08, 0, 1)
-      : 0;
-
-    return {
-      index,
-      middle,
-      ring,
-      pinky,
-      pointer,
-      previous: thumbIntentScore >= 0.54 && nonThumbClosed >= 0.32 && !relaxedPinch
-        ? clamp(thumbIntentScore * 0.70 + nonThumbClosed * 0.20 + context.inFrameRatio * 0.10, 0, 1)
-        : 0,
-      underline: underlineScore,
-      next: twoFinger
-        ? clamp(index * 0.38 + middle * 0.38 + (1 - Math.max(ring, pinky) * 0.16) * 0.14 + context.inFrameRatio * 0.10, 0, 1)
-        : 0,
-      clear: openPalm > 0 ? clamp(openPalm * 0.72 + context.inFrameRatio * 0.28, 0, 1) : 0,
-      thumbIndexRatio,
-      indexMiddleRatio,
-      thumbIntentScore,
-      thumbUpScore,
-      thumbSideScore,
-      nonThumbClosed,
-      twoFinger,
-      relaxedPinch,
-      strongPinch,
-      context,
-    };
-  }
-
-  function selectExclusiveGesture(scores, thresholds) {
-    // 점수 정렬 방식은 손 모양이 애매할 때 의도와 다른 제스처가 이기는 문제가 있었다.
-    // 단일 HTML 테스트 파일과 동일하게 명령 우선순위를 고정한다.
-    const priority = [
-      { command: "clear_page", score: scores.clear, threshold: thresholds.minSensitiveConfidence },
-      // 엄지+검지 판서는 실제 작성 중 가장 빈번한 동작이라 two-finger 후보보다 먼저 본다.
-      { command: "next_page", score: scores.next, threshold: Math.max(thresholds.minCommandConfidence, 0.54) },
-      { command: "underline", score: scores.underline, threshold: UNDERLINE_MIN_CONFIDENCE },
-      { command: "previous_page", score: scores.previous, threshold: 0.42 },
-    ];
-    const winner = priority.find((candidate) => candidate.score >= candidate.threshold) || null;
-    return winner
-      ? { command: winner.command, confidence: winner.score, blockedReason: "" }
-      : { command: null, confidence: Math.max(scores.pointer, scores.previous, scores.underline, scores.next, scores.clear), blockedReason: "임계값 미달" };
   }
 
   function collectCalibrationSample(hand, context, scores, handConfidence = 1) {

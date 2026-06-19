@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AirNote - 마이페이지</title>
-    <link rel="stylesheet" href="../css/styles.css?v=airnote-text-fix" />
+    <link rel="stylesheet" href="../css/styles.css?v=airnote-debug-calibration-20260616" />
   </head>
   <body>
     <main class="app-layout">
@@ -73,6 +73,26 @@
         </section>
       </section>
     </main>
+    <div class="record-viewer-modal" id="recordViewerModal" aria-hidden="true">
+      <div class="record-viewer-backdrop" data-record-viewer-close></div>
+      <section class="record-viewer-dialog" role="dialog" aria-modal="true" aria-labelledby="recordViewerTitle">
+        <header class="record-viewer-header">
+          <h2 id="recordViewerTitle">발표 기록 확인</h2>
+          <button class="record-viewer-close" type="button" data-record-viewer-close aria-label="닫기">×</button>
+        </header>
+        <div class="record-viewer-body">
+          <div class="record-viewer-stage" id="recordViewerStage">
+            <p class="record-viewer-empty" id="recordViewerEmpty">저장된 판서가 없습니다.</p>
+            <img class="record-viewer-image" id="recordViewerImage" alt="저장된 발표 판서" />
+          </div>
+        </div>
+        <footer class="record-viewer-footer">
+          <button class="record-viewer-nav" id="recordViewerPrev" type="button">이전</button>
+          <span class="record-viewer-count" id="recordViewerCount">0 / 0</span>
+          <button class="record-viewer-nav" id="recordViewerNext" type="button">다음</button>
+        </footer>
+      </section>
+    </div>
     <script type="module" src="../js/pages/mypage.js"></script>
   </body>
 </html>

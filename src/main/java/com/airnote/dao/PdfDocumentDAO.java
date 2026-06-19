@@ -41,7 +41,7 @@ public class PdfDocumentDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("PDF 문서 DB 저장에 실패했습니다.", e);
 		}
 
 		return pdfId;

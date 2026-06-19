@@ -15,6 +15,7 @@ import javax.servlet.http.HttpServletResponse;
 import com.airnote.model.Annotation;
 import com.airnote.service.AnnotationService;
 import com.google.gson.Gson;
+import com.airnote.common.ApiServletSupport;
 
 @WebServlet(urlPatterns = { "/api/annotations", "/api/annotations/delete" })
 public class AnnotationController extends HttpServlet {
@@ -53,7 +54,7 @@ public class AnnotationController extends HttpServlet {
 		}
 
 		try {
-			int presentationId = Integer.parseInt(presentationIdStr);
+			int presentationId = ApiServletSupport.requirePositiveInt("presentationId", presentationIdStr);
 
 			List<Annotation> annotations = annotationService.getAnnotationList(presentationId);
 
@@ -63,35 +64,36 @@ public class AnnotationController extends HttpServlet {
 
 			writeJson(response, true, "판서 목록 조회 성공", data);
 
-		} catch (NumberFormatException e) {
-			writeJson(response, false, "presentationId는 숫자여야 합니다.", null);
+		} catch (IllegalArgumentException e) {
+			ApiServletSupport.badRequest(response, e.getMessage());
+		} catch (Exception e) {
+			e.printStackTrace();
+			ApiServletSupport.serverError(response, "판서 목록 조회 중 DB 오류가 발생했습니다.");
 		}
 	}
 
 	private void saveAnnotation(HttpServletRequest request, HttpServletResponse response) throws IOException {
 		try {
-			String body = readBody(request);
-
 			Annotation annotation = null;
-
-			if (!isBlank(body)) {
-				annotation = gson.fromJson(body, Annotation.class);
+			String contentType = request.getContentType();
+			if (contentType != null && contentType.toLowerCase().startsWith("application/json")) {
+				annotation = ApiServletSupport.readJson(request, Annotation.class);
 			}
 
 			if (annotation == null) {
 				annotation = new Annotation();
-				annotation.setPresentationId(parseInt(request.getParameter("presentationId")));
-				annotation.setPageNo(parseInt(request.getParameter("pageNo")));
+				annotation.setPresentationId(parseRequiredInt("presentationId", request.getParameter("presentationId")));
+				annotation.setPageNo(parseRequiredInt("pageNo", request.getParameter("pageNo")));
 				annotation.setToolType(request.getParameter("toolType"));
 				annotation.setColor(request.getParameter("color"));
-				annotation.setStartX(parseDouble(request.getParameter("startX")));
-				annotation.setStartY(parseDouble(request.getParameter("startY")));
-				annotation.setEndX(parseDouble(request.getParameter("endX")));
-				annotation.setEndY(parseDouble(request.getParameter("endY")));
-				annotation.setAnchorId(parseInt(request.getParameter("anchorId")));
-				annotation.setMatchLogId(parseInt(request.getParameter("matchLogId")));
+				annotation.setStartX(parseRequiredDouble("startX", request.getParameter("startX")));
+				annotation.setStartY(parseRequiredDouble("startY", request.getParameter("startY")));
+				annotation.setEndX(parseRequiredDouble("endX", request.getParameter("endX")));
+				annotation.setEndY(parseRequiredDouble("endY", request.getParameter("endY")));
+				annotation.setAnchorId(parseOptionalInteger("anchorId", request.getParameter("anchorId")));
 				annotation.setSourceType(request.getParameter("sourceType"));
-				annotation.setMatchConfidence(parseDouble(request.getParameter("matchConfidence")));
+				annotation.setMatchConfidence(parseOptionalDouble("matchConfidence",
+						request.getParameter("matchConfidence")));
 			}
 
 			int annotationId = annotationService.saveAnnotation(annotation);
@@ -105,9 +107,11 @@ public class AnnotationController extends HttpServlet {
 				writeJson(response, false, "판서 기록 저장 실패", null);
 			}
 
+		} catch (IllegalArgumentException e) {
+			ApiServletSupport.badRequest(response, e.getMessage());
 		} catch (Exception e) {
 			e.printStackTrace();
-			writeJson(response, false, "서버 오류로 판서 저장 실패", null);
+			ApiServletSupport.serverError(response, "서버 오류로 판서 저장에 실패했습니다.");
 		}
 	}
 
@@ -133,11 +137,11 @@ public class AnnotationController extends HttpServlet {
 
 			// 혹시 form-data나 x-www-form-urlencoded로 테스트할 때도 작동하게 예비 처리
 			if (annotationId <= 0) {
-				annotationId = parseInt(request.getParameter("annotationId"));
+				annotationId = parseRequiredInt("annotationId", request.getParameter("annotationId"));
 			}
 
 			if (presentationId <= 0) {
-				presentationId = parseInt(request.getParameter("presentationId"));
+				presentationId = parseRequiredInt("presentationId", request.getParameter("presentationId"));
 			}
 
 			if (isBlank(deleteType)) {
@@ -155,9 +159,11 @@ public class AnnotationController extends HttpServlet {
 				writeJson(response, false, "삭제할 판서가 없거나 이미 삭제 처리된 판서입니다.", null);
 			}
 
+		} catch (IllegalArgumentException e) {
+			ApiServletSupport.badRequest(response, e.getMessage());
 		} catch (Exception e) {
 			e.printStackTrace();
-			writeJson(response, false, "서버 오류로 판서 삭제 처리 실패", null);
+			ApiServletSupport.serverError(response, "서버 오류로 판서 삭제 처리에 실패했습니다.");
 		}
 	}
 
@@ -181,36 +187,47 @@ public class AnnotationController extends HttpServlet {
 
 	private void writeJson(HttpServletResponse response, boolean success, String message, Object data)
 			throws IOException {
-		Map<String, Object> result = new LinkedHashMap<>();
-		result.put("success", success);
-		result.put("message", message);
-
-		if (data != null) {
-			result.put("data", data);
-		}
-
-		response.getWriter().write(gson.toJson(result));
-	}
-
-	private int parseInt(String value) {
-		try {
-			if (isBlank(value)) {
-				return 0;
-			}
-			return Integer.parseInt(value);
-		} catch (Exception e) {
-			return 0;
+		if (success) {
+			ApiServletSupport.success(response, message, data);
+		} else {
+			ApiServletSupport.badRequest(response, message);
 		}
 	}
 
-	private double parseDouble(String value) {
+	private int parseRequiredInt(String name, String value) {
+		return ApiServletSupport.requirePositiveInt(name, value);
+	}
+
+	private double parseRequiredDouble(String name, String value) {
+		if (isBlank(value)) {
+			throw new IllegalArgumentException(name + "가 필요합니다.");
+		}
 		try {
-			if (isBlank(value)) {
-				return 0;
-			}
 			return Double.parseDouble(value);
-		} catch (Exception e) {
-			return 0;
+		} catch (NumberFormatException e) {
+			throw new IllegalArgumentException(name + "는 숫자여야 합니다.");
+		}
+	}
+
+	private Integer parseOptionalInteger(String name, String value) {
+		if (isBlank(value)) {
+			return null;
+		}
+		try {
+			return Integer.valueOf(value);
+		} catch (NumberFormatException error) {
+			throw new IllegalArgumentException(name + "는 숫자여야 합니다.");
+		}
+	}
+
+	private Double parseOptionalDouble(String name, String value) {
+		if (isBlank(value)) {
+			return null;
+		}
+		try {
+			return Double.valueOf(value);
+		} catch (NumberFormatException error) {
+			throw new IllegalArgumentException(name + "는 숫자여야 합니다.");
 		}
 	}
 

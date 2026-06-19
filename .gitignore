@@ -1,3 +1,30 @@
 target/
 Front_engine_split_gesture_fix/playwright-report/
 Front_engine_split_gesture_fix/test-results/
+
+# Local configuration and large backup artifacts
+backend.local.env
+.mvn/apache-maven-*/
+.mvn/*.zip
+Front_engine_split_gesture_fix.zip
+중복파일백업/
+
+# Dependencies & build output
+node_modules/
+Front_engine_split_gesture_fix/dist/
+
+# Vendored large binary dependencies (regenerated via scripts)
+Front_engine_split_gesture_fix/vendor/
+
+# Local servlet container / runtime artifacts
+tomcat/
+tomcat9.zip
+tomcat9.zip.sha512
+uploads/
+logs/
+
+# Backups & local tooling
+*.bak
+.agents/
+.claude/
+skills-lock.json

@@ -10,6 +10,10 @@ public class DocumentService {
 	private PdfDocumentDAO pdfDocumentDAO = new PdfDocumentDAO();
 
 	public int savePdfDocument(int userId, String fileName, Integer pageCount) {
+		if (userId <= 0 || fileName == null || fileName.trim().isEmpty() || fileName.length() > 255
+				|| pageCount == null || pageCount <= 0) {
+			return 0;
+		}
 		PdfDocument pdfDocument = new PdfDocument();
 
 		pdfDocument.setUserId(userId);

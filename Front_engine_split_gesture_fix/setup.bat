@@ -4,6 +4,9 @@ setlocal
 set "ROOT=%~dp0"
 set "STT_DIR=%ROOT%stt_server"
 set "VENV_DIR=%STT_DIR%\.venv"
+set "STT_MODEL_LOG=%STT_DIR%\stt_model_install.log"
+set "HF_HUB_DISABLE_SYMLINKS_WARNING=1"
+set "PYTHONUNBUFFERED=1"
 
 echo.
 echo ========================================
@@ -61,6 +64,14 @@ if errorlevel 1 (
 
 echo.
 echo [2/4] Creating Python virtual environment...
+if exist "%VENV_DIR%\Scripts\python.exe" (
+  "%VENV_DIR%\Scripts\python.exe" -c "import sys" >nul 2>nul
+  if errorlevel 1 (
+    echo [INFO] The copied Python virtual environment belongs to another PC.
+    echo [INFO] Recreating stt_server\.venv for this PC...
+    rmdir /s /q "%VENV_DIR%"
+  )
+)
 if not exist "%VENV_DIR%\Scripts\python.exe" (
   %PYTHON_CMD% -m venv "%VENV_DIR%"
   if errorlevel 1 (
@@ -83,9 +94,14 @@ if errorlevel 1 (
 echo.
 echo [4/4] Preparing faster-whisper medium model...
 echo This downloads the model only the first time. It will be reused from stt_server\models.
-call "%VENV_DIR%\Scripts\python.exe" "%STT_DIR%\prepare_model.py"
+echo Download log: %STT_MODEL_LOG%
+echo ===== AirNote STT model install %DATE% %TIME% ===== > "%STT_MODEL_LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& '%VENV_DIR%\Scripts\python.exe' '%STT_DIR%\prepare_model.py' 2>&1 | Tee-Object -FilePath '%STT_MODEL_LOG%' -Append; exit $LASTEXITCODE"
 if errorlevel 1 (
   echo [ERROR] STT model preparation failed.
+  echo Details were saved here:
+  echo %STT_MODEL_LOG%
+  type "%STT_MODEL_LOG%"
   pause
   exit /b 1
 )

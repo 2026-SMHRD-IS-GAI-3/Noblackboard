@@ -1,15 +1,7 @@
-import { saveLoginSession, startLocalGestureSession } from "../core/auth.js";
+import { saveLoginSession } from "../core/auth.js";
 import { AirNoteApi } from "../core/api.js";
 import { STORAGE_KEYS } from "../core/constants.js";
-import { readJson } from "../core/storage.js";
 import { setModalOpen, showToast } from "../core/ui.js";
-
-const TEST_USER = { name: "테스트", email: "air@note" };
-const TEST_PASSWORD = "airnote0619";
-
-function getSignupUsers() {
-  return readJson(localStorage, STORAGE_KEYS.signupUsers, []);
-}
 
 function updateSystemStatus(cameraConnected) {
   const percent = cameraConnected ? 100 : 0;
@@ -24,24 +16,15 @@ function updateSystemStatus(cameraConnected) {
 }
 
 async function checkCameraStatus() {
-  if (!navigator.mediaDevices) {
+  if (!navigator.mediaDevices?.enumerateDevices) {
     updateSystemStatus(false);
     return;
   }
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices?.();
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    // enumerateDevices는 권한 없이도 호출 가능 — deviceId가 비어있어도 kind로 존재 여부 확인
     const hasCamera = Array.isArray(devices) && devices.some((device) => device.kind === "videoinput");
-    if (hasCamera) {
-      updateSystemStatus(true);
-      return;
-    }
-    if (!navigator.mediaDevices.getUserMedia) {
-      updateSystemStatus(false);
-      return;
-    }
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    stream.getTracks().forEach((track) => track.stop());
-    updateSystemStatus(true);
+    updateSystemStatus(hasCamera);
   } catch (error) {
     console.warn("AirNote login: camera status check failed.", error);
     updateSystemStatus(false);
@@ -49,10 +32,7 @@ async function checkCameraStatus() {
 }
 
 function findUserForPasswordLookup(name, email) {
-  if (name === TEST_USER.name && email === TEST_USER.email) {
-    return { ...TEST_USER, password: TEST_PASSWORD };
-  }
-  return getSignupUsers().find((user) => user.name === name && user.email === email) || null;
+  return null;
 }
 
 document.getElementById("loginForm")?.addEventListener("submit", async (event) => {
@@ -75,10 +55,13 @@ document.getElementById("loginForm")?.addEventListener("submit", async (event) =
     const response = await AirNoteApi.login({ email, password });
     user = response.data;
   } catch (error) {
-    console.warn("AirNote login: backend login failed, using local fallback.", error);
-    user = email === TEST_USER.email && password === TEST_PASSWORD
-      ? TEST_USER
-      : getSignupUsers().find((candidate) => candidate.email === email && candidate.password === password);
+    console.warn("AirNote login: backend login failed.", error);
+    showToast(
+      document.getElementById("loginToast"),
+      error?.message || "백엔드 서버에 연결할 수 없습니다.",
+      3000
+    );
+    return;
   }
 
   if (user) {
@@ -92,13 +75,6 @@ document.getElementById("loginForm")?.addEventListener("submit", async (event) =
     "이메일 또는 비밀번호가 일치하지 않습니다. 입력한 정보를 다시 확인해주세요.",
     2600
   );
-});
-
-document.getElementById("localGestureTestBtn")?.addEventListener("click", () => {
-  startLocalGestureSession();
-  sessionStorage.removeItem(STORAGE_KEYS.currentPdfId);
-  sessionStorage.removeItem(STORAGE_KEYS.currentPresentationId);
-  window.location.href = "pages/presentation.html?local=1";
 });
 
 const forgotPasswordModal = document.getElementById("forgotPasswordModal");
@@ -122,7 +98,7 @@ document.getElementById("togglePasswordViewBtn")?.addEventListener("click", () =
   const message = document.getElementById("forgotPasswordMessage");
   const user = findUserForPasswordLookup(name, email);
   if (!user) {
-    if (message) message.textContent = "입력한 정보와 일치하는 계정을 찾을 수 없습니다.";
+    if (message) message.textContent = "비밀번호 확인은 관리자에게 문의해주세요.";
     preview.hidden = true;
     button.textContent = "비밀번호 확인";
     return;

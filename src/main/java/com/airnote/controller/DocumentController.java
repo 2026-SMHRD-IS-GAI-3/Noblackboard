@@ -2,6 +2,10 @@ package com.airnote.controller;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
 import javax.servlet.ServletException;
@@ -13,6 +17,10 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.Part;
 
 import com.airnote.service.DocumentService;
+import com.airnote.common.ApiServletSupport;
+import com.airnote.util.UploadStorage;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 // PDF 업로드 요청을 받아 문서 정보를 저장하는 API 컨트롤러
 
@@ -29,64 +37,63 @@ public class DocumentController extends HttpServlet {
 
 		request.setCharacterEncoding("UTF-8");
 		response.setContentType("application/json; charset=UTF-8");
+		Path savedPath = null;
+		boolean keepSavedFile = false;
 
 		try {
-			int userId = Integer.parseInt(request.getParameter("userId"));
-
-			Integer pageCount = null;
-			String pageCountValue = request.getParameter("pageCount");
-
-			if (pageCountValue != null && !pageCountValue.trim().isEmpty()) {
-				pageCount = Integer.parseInt(pageCountValue);
-			}
+			int userId = ApiServletSupport.requirePositiveInt("userId", request.getParameter("userId"));
+			int pageCount = ApiServletSupport.requirePositiveInt("pageCount", request.getParameter("pageCount"));
 
 			Part filePart = request.getPart("file");
 
 			if (filePart == null || filePart.getSize() == 0) {
-				response.getWriter().print("{\"success\":false," + "\"message\":\"업로드할 PDF 파일이 없습니다\"}");
+				ApiServletSupport.badRequest(response, "업로드할 PDF 파일이 없습니다.");
 				return;
 			}
 
 			String originalFileName = getFileName(filePart);
 
 			if (originalFileName == null || originalFileName.trim().isEmpty()) {
-				response.getWriter().print("{\"success\":false," + "\"message\":\"파일명이 올바르지 않습니다\"}");
+				ApiServletSupport.badRequest(response, "파일명이 올바르지 않습니다.");
 				return;
 			}
 
 			if (!originalFileName.toLowerCase().endsWith(".pdf")) {
-				response.getWriter().print("{\"success\":false," + "\"message\":\"PDF 파일만 업로드할 수 있습니다\"}");
+				ApiServletSupport.badRequest(response, "PDF 파일만 업로드할 수 있습니다.");
 				return;
 			}
 
-			String uploadPath = request.getServletContext().getRealPath("/uploads/pdf");
-
-			File uploadDir = new File(uploadPath);
-
-			if (!uploadDir.exists()) {
-				uploadDir.mkdirs();
-			}
-
 			String savedFileName = UUID.randomUUID().toString() + "_" + originalFileName;
-			String savedPath = uploadPath + File.separator + savedFileName;
-
-			filePart.write(savedPath);
+			savedPath = UploadStorage.directory("pdf").resolve(savedFileName);
+			try (InputStream input = filePart.getInputStream()) {
+				Files.copy(input, savedPath, StandardCopyOption.REPLACE_EXISTING);
+			}
 
 			int pdfId = documentService.savePdfDocument(userId, savedFileName, pageCount);
 
 			if (pdfId > 0) {
-				response.getWriter()
-						.print("{\"success\":true," + "\"message\":\"PDF 업로드 성공\"," + "\"data\":{" + "\"pdfId\":"
-								+ pdfId + "," + "\"fileName\":\"" + savedFileName + "\"," + "\"pageCount\":"
-								+ (pageCount == null ? "null" : pageCount) + "}}");
+				keepSavedFile = true;
+				Map<String, Object> data = new LinkedHashMap<>();
+				data.put("pdfId", pdfId);
+				data.put("fileName", savedFileName);
+				data.put("pageCount", pageCount);
+				ApiServletSupport.success(response, "PDF 업로드 성공", data);
 			} else {
-				response.getWriter().print("{\"success\":false," + "\"message\":\"PDF 정보 DB 저장 실패\"}");
+				ApiServletSupport.serverError(response, "PDF 정보 DB 저장 실패");
 			}
 
 		} catch (Exception e) {
 			e.printStackTrace();
 
-			response.getWriter().print("{\"success\":false," + "\"message\":\"PDF 업로드 처리 중 오류 발생\"}");
+			if (e instanceof IllegalArgumentException) {
+				ApiServletSupport.badRequest(response, e.getMessage());
+			} else {
+				ApiServletSupport.serverError(response, "PDF 업로드 처리 중 오류가 발생했습니다.");
+			}
+		} finally {
+			if (savedPath != null && !keepSavedFile) {
+				Files.deleteIfExists(savedPath);
+			}
 		}
 	}
 

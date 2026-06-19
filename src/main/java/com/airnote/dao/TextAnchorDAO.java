@@ -53,7 +53,7 @@ public class TextAnchorDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("텍스트 앵커 DB 조회에 실패했습니다.", e);
 		}
 
 		return list;

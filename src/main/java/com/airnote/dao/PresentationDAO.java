@@ -16,7 +16,7 @@ public class PresentationDAO {
 	// 발표 시작
 	public int insertPresentation(Presentation presentation) {
 
-		String seqSql = "SELECT SEQ_PRESENTATION.NEXTVAL FROM DUAL";
+		String seqSql = "SELECT SEQ_PRESENTATION_ID.NEXTVAL FROM DUAL";
 
 		String insertSql = "" + "INSERT INTO TB_PRESENTATION (" + "    PRESENTATION_ID, " + "    USER_ID, "
 				+ "    PDF_ID, " + "    START_TIME, " + "    END_TIME " + ") VALUES (" + "    ?, " + "    ?, "
@@ -45,12 +45,11 @@ public class PresentationDAO {
 					return presentationId;
 				}
 			}
+			return 0;
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("발표 시작 DB 저장에 실패했습니다.", e);
 		}
-
-		return 0;
 	}
 
 	// 발표 종료
@@ -65,10 +64,8 @@ public class PresentationDAO {
 			return ps.executeUpdate();
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("발표 종료 DB 저장에 실패했습니다.", e);
 		}
-
-		return 0;
 	}
 
 	// 발표 상세 조회
@@ -99,7 +96,7 @@ public class PresentationDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("발표 상세 DB 조회에 실패했습니다.", e);
 		}
 
 		return null;
@@ -135,7 +132,7 @@ public class PresentationDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("발표 목록 DB 조회에 실패했습니다.", e);
 		}
 
 		return list;

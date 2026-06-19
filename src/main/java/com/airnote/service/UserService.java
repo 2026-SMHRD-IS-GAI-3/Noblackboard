@@ -7,18 +7,22 @@ public class UserService {
 
 	private UserDAO userDAO = new UserDAO();
 
+	public boolean emailExists(String email) {
+		return email != null && !email.trim().isEmpty() && userDAO.existsByEmail(email.trim());
+	}
+
 	// 회원가입
 	public User register(String name, String email, String password) {
 
-		if (name == null || name.trim().isEmpty()) {
+		if (name == null || name.trim().isEmpty() || name.trim().length() > 50) {
 			return null;
 		}
 
-		if (email == null || email.trim().isEmpty()) {
+		if (email == null || email.trim().isEmpty() || email.trim().length() > 100) {
 			return null;
 		}
 
-		if (password == null || password.trim().isEmpty()) {
+		if (password == null || password.trim().isEmpty() || password.length() > 100) {
 			return null;
 		}
 
@@ -53,11 +57,11 @@ public class UserService {
 	// 로그인
 	public User login(String email, String password) {
 
-		if (email == null || email.trim().isEmpty()) {
+		if (email == null || email.trim().isEmpty() || email.trim().length() > 100) {
 			return null;
 		}
 
-		if (password == null || password.trim().isEmpty()) {
+		if (password == null || password.trim().isEmpty() || password.length() > 100) {
 			return null;
 		}
 
@@ -100,6 +104,9 @@ public class UserService {
 		if (user.getCalibrationScaleY() == null) {
 			return false;
 		}
+		if (user.getCalibrationScaleX() <= 0 || user.getCalibrationScaleY() <= 0) {
+			return false;
+		}
 
 		// 화면 크기 정보 필수 체크
 		if (user.getCameraWidth() == null) {
@@ -115,6 +122,10 @@ public class UserService {
 		}
 
 		if (user.getCanvasHeight() == null) {
+			return false;
+		}
+		if (user.getCameraWidth() <= 0 || user.getCameraHeight() <= 0
+				|| user.getCanvasWidth() <= 0 || user.getCanvasHeight() <= 0) {
 			return false;
 		}
 

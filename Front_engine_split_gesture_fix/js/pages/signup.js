@@ -1,6 +1,4 @@
 import { AirNoteApi } from "../core/api.js";
-import { STORAGE_KEYS } from "../core/constants.js";
-import { readJson, writeJson } from "../core/storage.js";
 
 document.getElementById("signupForm")?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -17,6 +15,10 @@ document.getElementById("signupForm")?.addEventListener("submit", async (event) 
     if (message) message.textContent = "이름, 이메일, 비밀번호를 모두 입력해주세요.";
     return;
   }
+  if (name.length > 50 || email.length > 100 || password.length > 100) {
+    if (message) message.textContent = "이름은 50자, 이메일과 비밀번호는 100자 이하여야 합니다.";
+    return;
+  }
   if (message) message.textContent = "";
   try {
     await AirNoteApi.register({ name, email, password });
@@ -25,9 +27,5 @@ document.getElementById("signupForm")?.addEventListener("submit", async (event) 
     if (message) message.textContent = error?.message || "회원가입 정보를 서버에 저장하지 못했습니다.";
     return;
   }
-  const users = readJson(localStorage, STORAGE_KEYS.signupUsers, [])
-    .filter((user) => user.email !== email);
-  users.push({ name, email, password });
-  writeJson(localStorage, STORAGE_KEYS.signupUsers, users);
   window.location.href = "../index.html";
 });

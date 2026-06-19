@@ -9,6 +9,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import com.airnote.common.ApiResponse;
+import com.airnote.common.ApiServletSupport;
 import com.airnote.model.Presentation;
 import com.airnote.service.PresentationService;
 import com.google.gson.Gson;
@@ -33,24 +34,26 @@ public class PresentationDetailController extends HttpServlet {
 			String presentationIdStr = request.getParameter("presentationId");
 
 			if (presentationIdStr == null || presentationIdStr.trim().isEmpty()) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("presentationId가 필요합니다.")));
+				ApiServletSupport.badRequest(response, "presentationId가 필요합니다.");
 				return;
 			}
 
-			int presentationId = Integer.parseInt(presentationIdStr);
+			int presentationId = ApiServletSupport.requirePositiveInt("presentationId", presentationIdStr);
 
 			Presentation presentation = presentationService.getPresentationDetail(presentationId);
 
 			if (presentation == null) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("발표 정보를 찾을 수 없습니다.")));
+				ApiServletSupport.notFound(response, "발표 정보를 찾을 수 없습니다.");
 				return;
 			}
 
-			response.getWriter().write(gson.toJson(ApiResponse.success("발표 상세 조회 성공", presentation)));
+			ApiServletSupport.success(response, "발표 상세 조회 성공", presentation);
 
+		} catch (IllegalArgumentException e) {
+			ApiServletSupport.badRequest(response, e.getMessage());
 		} catch (Exception e) {
 			e.printStackTrace();
-			response.getWriter().write(gson.toJson(ApiResponse.error("발표 상세 조회 중 오류가 발생했습니다.")));
+			ApiServletSupport.serverError(response, "발표 상세 조회 중 DB 오류가 발생했습니다.");
 		}
 	}
 }

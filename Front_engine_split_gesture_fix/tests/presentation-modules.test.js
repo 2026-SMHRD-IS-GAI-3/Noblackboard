@@ -312,18 +312,107 @@ describe("local whisper STT controller", () => {
 
     const processor = AudioContextStub.processors[0];
     expect(processor).toBeTruthy();
-    processor.onaudioprocess({
-      inputBuffer: { getChannelData: () => new Float32Array(48000).fill(0.2) },
-      outputBuffer: { getChannelData: () => new Float32Array(4096) },
-    });
+    for (let frame = 0; frame < 8; frame += 1) {
+      const samples = new Float32Array(4096);
+      const amplitude = frame >= 2 && frame <= 5 ? 0.2 : 0.005;
+      for (let index = 0; index < samples.length; index += 1) {
+        samples[index] = Math.sin(index * 0.13) * amplitude;
+      }
+      processor.onaudioprocess({
+        inputBuffer: { getChannelData: () => samples },
+        outputBuffer: { getChannelData: () => new Float32Array(4096) },
+      });
+    }
 
     controller.stop();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(fetchImpl).toHaveBeenCalledTimes(3);
-    expect(String(fetchImpl.mock.calls[2][0])).toBe("http://localhost:5000/stt");
+    expect(String(fetchImpl.mock.calls[2][0])).toBe("http://127.0.0.1:8000/stt");
     expect(onTranscript).toHaveBeenCalledWith("인공지능 발표", true);
+  });
+
+  it("skips very quiet steady noise instead of amplifying hallucinations", async () => {
+    AudioContextStub.processors = [];
+    const statuses = [];
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }));
+    const controller = createLocalWhisperSttController({
+      AudioContext: AudioContextStub,
+      fetchImpl,
+      mediaDevices: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [{ stop: vi.fn() }],
+          getAudioTracks: () => [],
+        }),
+      },
+      onStatus: (status) => statuses.push(status),
+      chunkMs: 10000,
+    });
+
+    controller.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let index = 0; index < 8; index += 1) {
+      AudioContextStub.processors[0].onaudioprocess({
+        inputBuffer: { getChannelData: () => new Float32Array(4096).fill(0.00028) },
+        outputBuffer: { getChannelData: () => new Float32Array(4096) },
+      });
+    }
+    controller.stop();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(statuses.some((status) => status.status === "noise-skipped")).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("normalizes quiet audio when it contains speech-like level changes", async () => {
+    AudioContextStub.processors = [];
+    const statuses = [];
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true, text: "" }));
+    const controller = createLocalWhisperSttController({
+      AudioContext: AudioContextStub,
+      fetchImpl,
+      mediaDevices: {
+        getUserMedia: vi.fn().mockResolvedValue({
+          getTracks: () => [{ stop: vi.fn() }],
+          getAudioTracks: () => [],
+        }),
+      },
+      onStatus: (status) => statuses.push(status),
+      chunkMs: 10000,
+    });
+
+    controller.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    for (let frame = 0; frame < 8; frame += 1) {
+      const samples = new Float32Array(4096);
+      const amplitude = frame >= 3 && frame <= 5 ? 0.003 : 0.0001;
+      for (let index = 0; index < samples.length; index += 1) {
+        samples[index] = Math.sin(index * 0.17) * amplitude;
+      }
+      AudioContextStub.processors[0].onaudioprocess({
+        inputBuffer: { getChannelData: () => samples },
+        outputBuffer: { getChannelData: () => new Float32Array(4096) },
+      });
+    }
+    controller.stop();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const normalized = statuses.find((status) => status.status === "normalized");
+    expect(normalized?.gain).toBeGreaterThan(20);
+    expect(normalized?.outputLevelDb).toBeGreaterThan(-30);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("reports local STT server failures", async () => {

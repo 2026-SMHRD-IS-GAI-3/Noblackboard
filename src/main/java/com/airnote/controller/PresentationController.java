@@ -10,6 +10,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import com.airnote.common.ApiResponse;
+import com.airnote.common.ApiServletSupport;
 import com.airnote.model.Presentation;
 import com.airnote.service.PresentationService;
 import com.google.gson.Gson;
@@ -49,23 +50,25 @@ public class PresentationController extends HttpServlet {
 				pdfId = Integer.parseInt(request.getParameter("pdfId"));
 			}
 
-			if (userId == 0 || pdfId == 0) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("userId와 pdfId가 필요합니다.")));
+			if (userId <= 0 || pdfId <= 0) {
+				ApiServletSupport.badRequest(response, "userId와 pdfId는 1 이상의 숫자여야 합니다.");
 				return;
 			}
 
 			Presentation presentation = presentationService.startPresentation(userId, pdfId);
 
 			if (presentation == null) {
-				response.getWriter().write(gson.toJson(ApiResponse.error("발표 시작 실패")));
+				ApiServletSupport.serverError(response, "발표 시작 실패");
 				return;
 			}
 
-			response.getWriter().write(gson.toJson(ApiResponse.success("발표 시작 성공", presentation)));
+			ApiServletSupport.success(response, "발표 시작 성공", presentation);
 
+		} catch (com.google.gson.JsonParseException | NumberFormatException e) {
+			ApiServletSupport.badRequest(response, "발표 시작 요청값을 확인해주세요.");
 		} catch (Exception e) {
 			e.printStackTrace();
-			response.getWriter().write(gson.toJson(ApiResponse.error("발표 시작 처리 중 오류가 발생했습니다.")));
+			ApiServletSupport.serverError(response, "발표 시작 중 DB 오류가 발생했습니다.");
 		}
 	}
 

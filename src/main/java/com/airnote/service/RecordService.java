@@ -2,7 +2,11 @@ package com.airnote.service;
 
 import java.io.IOException;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import javax.servlet.ServletContext;
@@ -11,6 +15,7 @@ import javax.servlet.http.Part;
 import com.airnote.dao.RecordDAO;
 import com.airnote.model.RecordImage;
 import com.airnote.util.FileUploadUtil;
+import com.airnote.util.UploadStorage;
 
 // 캡처 이미지 파일 저장, DB 저장, 이미지 목록 조회를 처리하는 서비스
 
@@ -20,6 +25,9 @@ public class RecordService {
 
 	public RecordImage saveCaptureImage(ServletContext context, int presentationId, int pageNo, Part imagePart)
 			throws IOException {
+		if (presentationId <= 0 || pageNo <= 0) {
+			throw new IOException("presentationId와 pageNo는 1 이상이어야 합니다.");
+		}
 
 		// 1. 이미지 파일이 비어있는지 확인
 		if (imagePart == null || imagePart.getSize() == 0) {
@@ -34,7 +42,7 @@ public class RecordService {
 		}
 
 		// 3. 실제 저장 폴더 경로 만들기
-		String uploadDir = context.getRealPath("/uploads/records");
+		Path uploadDir = UploadStorage.directory("records");
 
 		if (uploadDir == null) {
 			throw new IOException("업로드 경로를 찾을 수 없습니다.");
@@ -44,10 +52,10 @@ public class RecordService {
 		String filePrefix = "presentation_" + presentationId + "_page_" + pageNo;
 
 		// 5. 이미지 파일 서버에 저장
-		String savedFileName = FileUploadUtil.savePart(imagePart, uploadDir, filePrefix);
+		String savedFileName = FileUploadUtil.savePart(imagePart, uploadDir.toString(), filePrefix);
 
 		// 6. 프론트에서 접근할 수 있는 이미지 URL 만들기
-		String imageUrl = context.getContextPath() + "/uploads/records/" + savedFileName;
+		String imageUrl = context.getContextPath() + "/api/records/files/" + savedFileName;
 
 		// 7. DB에 저장할 객체 만들기
 		RecordImage recordImage = new RecordImage();
@@ -59,14 +67,22 @@ public class RecordService {
 		recordImage.setFileSize(imagePart.getSize());
 
 		// 8. DB 저장
-		int recordImageId = recordDAO.insertRecordImage(recordImage);
+		int recordImageId;
+		try {
+			recordImageId = recordDAO.insertRecordImage(recordImage);
+		} catch (RuntimeException error) {
+			Files.deleteIfExists(uploadDir.resolve(savedFileName));
+			throw error;
+		}
 
 		if (recordImageId == 0) {
+			Files.deleteIfExists(uploadDir.resolve(savedFileName));
 			throw new IOException("DB에 캡처 이미지 기록 저장 실패");
 		}
 
 		// 9. 생성된 PK값 넣어서 반환
 		recordImage.setRecordImageId(recordImageId);
+		recordImage.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
 
 		return recordImage;
 	}

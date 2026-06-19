@@ -16,6 +16,9 @@ public class PresentationService {
 
 	// 발표 시작
 	public Presentation startPresentation(int userId, int pdfId) {
+		if (userId <= 0 || pdfId <= 0) {
+			return null;
+		}
 
 		Presentation presentation = new Presentation();
 		presentation.setUserId(userId);
@@ -32,6 +35,9 @@ public class PresentationService {
 
 	// 발표 종료
 	public boolean endPresentation(int presentationId) {
+		if (presentationId <= 0) {
+			return false;
+		}
 
 		int result = presentationDAO.updateEndTime(presentationId);
 
@@ -40,7 +46,9 @@ public class PresentationService {
 
 	// 발표 목록 조회
 	public List<Presentation> getPresentationList(int userId) {
-
+		if (userId <= 0) {
+			return java.util.Collections.emptyList();
+		}
 		return presentationDAO.selectPresentationsByUserId(userId);
 	}
 

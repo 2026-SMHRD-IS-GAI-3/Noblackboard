@@ -12,35 +12,49 @@ public class UserDAO {
 
 	// 회원가입
 	public int insertUser(User user) {
-
-		int userId = getNextUserId();
-
-		if (userId == 0) {
-			return 0;
+		String sequenceName = System.getenv("AIRNOTE_USER_SEQUENCE");
+		if (sequenceName == null || sequenceName.trim().isEmpty()) {
+			sequenceName = "SEQ_USER_ID";
+		}
+		sequenceName = sequenceName.trim().toUpperCase();
+		if (!sequenceName.matches("[A-Z][A-Z0-9_$#]*")) {
+			throw new IllegalStateException("AIRNOTE_USER_SEQUENCE 값이 올바르지 않습니다.");
 		}
 
 		String sql = "" + "INSERT INTO TB_USER (" + "    USER_ID, " + "    NAME, " + "    EMAIL, " + "    PASSWORD, "
 				+ "    JOIN_DATE, " + "    CALIBRATION_YN, " + "    CALIBRATION_MIRROR_YN " + ") VALUES (" + "    ?, "
 				+ "    ?, " + "    ?, " + "    ?, " + "    SYSDATE, " + "    'N', " + "    'N' " + ")";
 
-		try (Connection conn = DBUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
+		try (Connection conn = DBUtil.getConnection()) {
+			conn.setAutoCommit(false);
+			int userId;
 
-			ps.setInt(1, userId);
-			ps.setString(2, user.getName());
-			ps.setString(3, user.getEmail());
-			ps.setString(4, user.getPassword());
-
-			int result = ps.executeUpdate();
-
-			if (result > 0) {
-				return userId;
+			try (PreparedStatement idPs = conn.prepareStatement("SELECT " + sequenceName + ".NEXTVAL FROM DUAL");
+					ResultSet rs = idPs.executeQuery()) {
+				if (!rs.next()) {
+					conn.rollback();
+					return 0;
+				}
+				userId = rs.getInt(1);
 			}
 
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+			try (PreparedStatement ps = conn.prepareStatement(sql)) {
+				ps.setInt(1, userId);
+				ps.setString(2, user.getName());
+				ps.setString(3, user.getEmail());
+				ps.setString(4, user.getPassword());
 
-		return 0;
+				if (ps.executeUpdate() <= 0) {
+					conn.rollback();
+					return 0;
+				}
+			}
+
+			conn.commit();
+			return userId;
+		} catch (Exception e) {
+			throw new IllegalStateException("회원 DB 저장에 실패했습니다.", e);
+		}
 	}
 
 	// 이메일 중복 확인
@@ -59,7 +73,7 @@ public class UserDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("이메일 중복 DB 조회에 실패했습니다.", e);
 		}
 
 		return false;
@@ -108,7 +122,7 @@ public class UserDAO {
 			}
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			throw new IllegalStateException("로그인 DB 조회에 실패했습니다.", e);
 		}
 
 		return null;
@@ -116,25 +130,6 @@ public class UserDAO {
 
 	// USER_ID 생성
 	// 현재 프로젝트에 USER 시퀀스 이름이 확실하지 않아서 MAX + 1 방식으로 처리
-	private int getNextUserId() {
-
-		String sql = "SELECT NVL(MAX(USER_ID), 0) + 1 FROM TB_USER";
-
-		try (Connection conn = DBUtil.getConnection();
-				PreparedStatement ps = conn.prepareStatement(sql);
-				ResultSet rs = ps.executeQuery()) {
-
-			if (rs.next()) {
-				return rs.getInt(1);
-			}
-
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-
-		return 0;
-	}
-
 	// 캘리브레이션 저장
 	public int updateCalibration(User user) {
 
@@ -167,8 +162,7 @@ public class UserDAO {
 			return ps.executeUpdate();
 
 		} catch (Exception e) {
-			e.printStackTrace();
-			return 0;
+			throw new IllegalStateException("캘리브레이션 DB 저장에 실패했습니다.", e);
 		}
 	}
 
