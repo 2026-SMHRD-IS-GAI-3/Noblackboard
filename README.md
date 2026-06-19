@@ -358,13 +358,15 @@ erDiagram
 | `PRESENT_RUN_01` | 발표 진행 | PDF 슬라이드 뷰어 + 웹캠 손 인식 + 제스처/캘리브레이션/판서 + 발표 시간 표시 |
 | `MYPAGE_RECORD_01` | 마이페이지 | 발표 요약 카드, 발표 기록(자료명·날짜·판서 수) 조회·상세·삭제 |
 
-> 📸 실제 캡처 이미지는 `docs/screenshots/`에 넣고 아래 형식으로 임베드하세요.
->
-> ```markdown
-> | ![login](docs/screenshots/login.png) | ![presentation](docs/screenshots/presentation.png) |
-> | :---: | :---: |
-> | 로그인 | 발표 진행 |
-> ```
+| ![로그인](docs/screenshots/01-login.png) | ![회원가입](docs/screenshots/02-signup.png) |
+| :---: | :---: |
+| **로그인** | **회원가입** |
+| ![홈/업로드](docs/screenshots/03-home-upload.png) | ![마이페이지](docs/screenshots/05-mypage.png) |
+| **홈 / 파일 업로드** | **마이페이지** |
+
+| ![발표 진행](docs/screenshots/04-presentation.png) |
+| :---: |
+| **발표 진행** — PDF 슬라이드 · 웹캠 손 인식 · 제스처 안내 · 발표 시간 |
 
 ---
 
